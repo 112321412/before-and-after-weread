@@ -201,7 +201,10 @@ export function createGateway(key: string): GatewayClient {
     });
     if (!res.ok) throw new Error(`网关请求失败：HTTP ${res.status}`);
     const body = (await res.json()) as T;
-    if (body.errcode !== 0) throw new Error(`网关返回错误：${body.errmsg ?? body.errcode}`);
+    // 成功回包的 errcode 字段可以整个缺席（真实网关验证），只有显式非 0 才是错误
+    if (typeof body.errcode === "number" && body.errcode !== 0) {
+      throw new Error(`网关返回错误：${body.errmsg ?? body.errcode}`);
+    }
     return body;
   };
 
