@@ -4,6 +4,7 @@ import { App } from "./App";
 import "./styles/global.css";
 import "./styles/shelf.css";
 import "./styles/decide.css";
+import "./styles/review.css";
 
 createRoot(document.getElementById("root")!).render(
   <React.StrictMode>

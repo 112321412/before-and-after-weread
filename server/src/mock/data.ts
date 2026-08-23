@@ -119,18 +119,18 @@ export function mockHighlightRows(book: MockBook): MockNoteRow[] {
 export function mockThoughtRows(book: MockBook): MockNoteRow[] {
   if (book.thoughts === 0) return [];
   const random = seeded(`${book.bookId}-thought`);
-  const last = dateToTimestamp(book.lastReadAt ?? "2026-04-01");
-  const span = 60 * 60 * 24 * 45;
   const highlights = mockHighlightRows(book);
   return Array.from({ length: book.thoughts }, (_, i) => {
     const highlight = highlights[Math.floor(random() * highlights.length)];
+    // 想法必然晚于它针对的划线（真实数据的时间顺序），晚 1-20 天
+    const base = highlight ? highlight.createTime : dateToTimestamp(book.lastReadAt ?? "2026-04-01");
     return {
       bookId: book.bookId,
       text: THOUGHT_TEMPLATES[Math.floor(random() * THOUGHT_TEMPLATES.length)],
       abstract: highlight?.text,
       range: `cf_thought_${i}`,
       chapterUid: highlight?.chapterUid ?? 1,
-      createTime: last - Math.floor(random() * span)
+      createTime: base + 86400 * (1 + Math.floor(random() * 20))
     };
   });
 }

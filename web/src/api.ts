@@ -3,10 +3,13 @@ import type {
   DecisionCard,
   DecisionHistoryItem,
   IntentResult,
+  RecallDraft,
+  ReviewBookItem,
   SessionStatus,
   ShelfResponse,
   StatsResponse,
-  SyncProgress
+  SyncProgress,
+  ThemeResult
 } from "./types";
 
 const SID_KEY = "weread-copilot-sid";
@@ -54,5 +57,30 @@ export const api = {
     request<DecisionCard>("/api/decide/card", { method: "POST", body: JSON.stringify({ bookId, intent }) }),
   postDecision: (payload: { cardId: string; action: string; trigger?: string; reason?: string }) =>
     request<{ ok: boolean }>("/api/decision", { method: "POST", body: JSON.stringify(payload) }),
-  decisionHistory: () => request<{ decisions: DecisionHistoryItem[] }>("/api/decision")
+  decisionHistory: () => request<{ decisions: DecisionHistoryItem[] }>("/api/decision"),
+  reviewBooks: () => request<{ books: ReviewBookItem[] }>("/api/review/books"),
+  reviewBook: (bookId: string) =>
+    request<RecallDraft>(`/api/review/book/${bookId}`, { method: "POST", body: JSON.stringify({}) }),
+  reviewTheme: (question: string) =>
+    request<ThemeResult>("/api/review/theme", { method: "POST", body: JSON.stringify({ question }) }),
+  // 导出返回文件流，不走统一 JSON 封装
+  reviewExport: async (title: string, markdown: string): Promise<void> => {
+    const sid = getSid();
+    const res = await fetch("/api/review/export", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...(sid ? { "x-sid": sid } : {}) },
+      body: JSON.stringify({ title, markdown })
+    });
+    if (!res.ok) {
+      const body = (await res.json().catch(() => ({}))) as { error?: string };
+      throw new Error(body.error || "导出失败");
+    }
+    const blob = await res.blob();
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `${title}.md`;
+    link.click();
+    URL.revokeObjectURL(url);
+  }
 };

@@ -197,6 +197,82 @@ export interface DecisionHistoryItem {
   createdAt: number;
 }
 
+// ---- 读后整理（与 server/src/review/ 对齐）----
+
+export interface ReviewBookItem {
+  bookId: string;
+  title: string;
+  author: string;
+  group: "finished" | "abandoned" | "reading";
+  progress: number;
+  readMinutes: number;
+  lastReadAt: string | null;
+  finishedAt: string | null;
+  highlights: number;
+  thoughts: number;
+}
+
+export interface RecallEvidence {
+  id: string;
+  kind: "highlight" | "thought";
+  text: string;
+  context: string | null;
+  chapterUid: number | null;
+  createTime: number;
+}
+
+export interface RecallSection {
+  title: string;
+  paragraphs: string[];
+  evidenceIds: string[];
+}
+
+export interface EvolutionFact {
+  note: string;
+  evidenceIds: string[];
+}
+
+export interface RecallDraft {
+  bookId: string;
+  title: string;
+  framework: "finished" | "abandoned" | "reading";
+  llm: "llm" | "rules";
+  headlineNote: string | null;
+  sections: RecallSection[];
+  evolution: EvolutionFact[];
+  evidences: RecallEvidence[];
+  meta: {
+    progress: number;
+    readMinutes: number;
+    finishedAt: string | null;
+    lastReadAt: string | null;
+    highlightCount: number;
+    thoughtCount: number;
+  };
+}
+
+export interface ThemeEvidence extends RecallEvidence {
+  bookTitle: string;
+}
+
+export interface ThemeGroup {
+  title: string;
+  summary: string;
+  evidenceIds: string[];
+}
+
+export interface ThemeResult {
+  question: string;
+  insufficient: boolean;
+  note: string | null;
+  totalMatches: number;
+  books: string[];
+  themes: ThemeGroup[];
+  evolution: EvolutionFact[];
+  evidences: ThemeEvidence[];
+  llm: "llm" | "rules";
+}
+
 export interface SessionStatus {
   authenticated: boolean;
   mode: string;

@@ -14,6 +14,8 @@ import {
   type Session,
   type SyncState
 } from "./sync.js";
+import { requireSession, sessions, type AuthedRequest } from "./sessions.js";
+import { reviewRouter } from "./review/router.js";
 import { MOCK_BOOKS, MOCK_VID, mockWeeklyMinutes } from "./mock/data.js";
 import { svgCover } from "./mock/cover.js";
 import {
@@ -29,8 +31,6 @@ import type { IntentResult } from "./decide/types.js";
 const MODE = process.env.WEREAD_MODE === "real" ? "real" : "mock";
 const REAL_VID = "gateway-user";
 const PORT = 8787;
-
-const sessions = new Map<string, Session>();
 
 // 书架统一载荷：mock 与 real 落库后走完全相同的读取路径，UI/3D 层不感知模式差异
 interface ShelfBook {
@@ -55,6 +55,7 @@ interface ShelfBook {
 
 const app = express();
 app.use(express.json());
+app.use(reviewRouter);
 
 if (MODE === "mock") seedMockIfEmpty();
 
@@ -98,20 +99,6 @@ app.delete("/api/session", (req: Request, res: Response) => {
   sessions.delete(req.header("x-sid") ?? "");
   res.json({ ok: true });
 });
-
-interface AuthedRequest extends Request {
-  session: Session;
-}
-
-function requireSession(req: Request, res: Response, next: NextFunction): void {
-  const session = sessions.get(req.header("x-sid") ?? "");
-  if (!session) {
-    res.status(401).json({ error: "会话已失效，请重新配置 Key" });
-    return;
-  }
-  (req as AuthedRequest).session = session;
-  next();
-}
 
 // ---- 同步进度（Key 门进度条轮询）----
 
