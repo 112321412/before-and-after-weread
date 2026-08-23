@@ -1,4 +1,13 @@
-import type { SessionStatus, ShelfResponse, StatsResponse, SyncProgress } from "./types";
+import type {
+  CandidatesResult,
+  DecisionCard,
+  DecisionHistoryItem,
+  IntentResult,
+  SessionStatus,
+  ShelfResponse,
+  StatsResponse,
+  SyncProgress
+} from "./types";
 
 const SID_KEY = "weread-copilot-sid";
 
@@ -36,5 +45,14 @@ export const api = {
   destroySession: () => request<{ ok: boolean }>("/api/session", { method: "DELETE" }),
   syncProgress: () => request<SyncProgress>("/api/sync/progress"),
   shelf: () => request<ShelfResponse>("/api/shelf"),
-  stats: () => request<StatsResponse>("/api/stats")
+  stats: () => request<StatsResponse>("/api/stats"),
+  decideIntent: (input: string) =>
+    request<IntentResult>("/api/decide/intent", { method: "POST", body: JSON.stringify({ input }) }),
+  decideCandidates: (intent: IntentResult, offset = 0) =>
+    request<CandidatesResult>("/api/decide/candidates", { method: "POST", body: JSON.stringify({ intent, offset }) }),
+  decideCard: (bookId: string, intent: IntentResult) =>
+    request<DecisionCard>("/api/decide/card", { method: "POST", body: JSON.stringify({ bookId, intent }) }),
+  postDecision: (payload: { cardId: string; action: string; trigger?: string; reason?: string }) =>
+    request<{ ok: boolean }>("/api/decision", { method: "POST", body: JSON.stringify(payload) }),
+  decisionHistory: () => request<{ decisions: DecisionHistoryItem[] }>("/api/decision")
 };

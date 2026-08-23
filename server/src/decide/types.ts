@@ -1,66 +1,11 @@
-// 与服务端 palette.ts 的 10 键结构保持一致（前端只消费）
-export interface Palette {
-  paper: string;
-  paperDeep: string;
-  paperPale: string;
-  ink: string;
-  inkSoft: string;
-  shelf: string;
-  shelfDark: string;
-  light: string;
-  fill: string;
-  accent: string;
-}
-
-export interface ShelfBook {
-  bookId: string;
-  title: string;
-  author: string;
-  category: string;
-  cover: string;
-  dominant: string;
-  palette: Palette;
-  progress: number;
-  finished: boolean;
-  abandoned: boolean;
-  readMinutes: number;
-  lastReadAt: string | null;
-  finishedAt: string | null;
-  highlights: number;
-  thoughts: number;
-  archive: string | null;
-  sizeSeed: number; // 3D 书体物理尺寸（宽窄高矮）的随机种子，由服务端下发
-}
-
-export interface ShelfResponse {
-  mode: string;
-  books: ShelfBook[];
-}
-
-export interface StatsResponse {
-  weeklyMinutes: { label: string; minutes: number }[];
-  monthMinutes: number;
-  finished: number;
-  abandoned: number;
-  highlights: number;
-  thoughts: number;
-  recentDecisions: { id: number; topic: string | null; verdict: string; action: string | null; created_at: number }[];
-  speedBaseline: { wpm: number; basis: string } | null;
-}
-
-export type SyncPhase = "notebooks" | "shelf" | "notes" | "covers" | "readdata" | "baseline" | "done" | "error";
-
-export interface SyncProgress {
-  phase: SyncPhase;
-  current: number;
-  total: number;
-  percent: number;
-  error?: string;
-}
-
-// ---- 选书决策（与 server/src/decide/types.ts 对齐）----
-
-export type GoalType = "solve_problem" | "systematic" | "counter_view" | "relax" | "follow_topic" | "revisit";
+// 决策引擎类型：字段对齐 docs/decision-card-spec.md
+export type GoalType =
+  | "solve_problem" // 解决具体问题
+  | "systematic" // 系统入门
+  | "counter_view" // 找反方观点
+  | "relax" // 消遣放松
+  | "follow_topic" // 跟上话题
+  | "revisit"; // 重读
 
 export const GOAL_LABELS: Record<GoalType, string> = {
   solve_problem: "解决具体问题",
@@ -81,12 +26,12 @@ export interface Constraints {
 export interface IntentResult {
   mode: "topic" | "book" | "ambiguous";
   goalType: GoalType;
-  topic: string;
+  topic: string; // 主题式=主题词，书目式=书名
   verbatim: string;
   constraints: Constraints;
   followupChips?: string[];
-  resolvedBookId?: string;
-  llm: "llm" | "rules";
+  resolvedBookId?: string; // 书目式：服务端解析出的 bookId，直接跳候选/卡片
+  llm: "llm" | "rules"; // 意图解析来源（mock/degraded 均为 rules）
 }
 
 export interface Candidate {
@@ -97,14 +42,14 @@ export interface Candidate {
   ratingCount: number;
   intro: string;
   source: "search" | "similar";
-  dupNote: string | null;
+  dupNote: string | null; // 书架去重提示（在读/想读/曾弃读）
 }
 
 export interface CandidatesResult {
   keywords: string[];
   candidates: Candidate[];
-  preselected: string[];
-  filteredCount: number;
+  preselected: string[]; // 预勾选的 bookId
+  filteredCount: number; // 粗筛剔除数量（评分人数下限 + 已读去重）
   offset: number;
   hasMore: boolean;
 }
@@ -113,14 +58,14 @@ export interface Quote {
   text: string;
   star: number;
   isFinish: boolean;
-  highWeight: boolean;
+  highWeight: boolean; // “读完仍差评”是 P1 高权重信号（仅差评档）
 }
 
 export interface ThemeBlock {
   theme: string;
   count: number;
   total: number;
-  display: string;
+  display: string; // 展示口径：“20 条抽样差评中 5 条提及”
   quotes: Quote[];
 }
 
@@ -143,7 +88,7 @@ export interface DecisionCard {
     ratingCount: number;
   };
   userGoal: { type: GoalType; verbatim: string; constraints: Constraints };
-  llm: "llm" | "rules";
+  llm: "llm" | "rules"; // rules 时卡面明示“未接入 LLM，判定仅含闸门规则”
   verdict: {
     action: "read_now" | "shelve" | "skip";
     confidence: "high" | "medium" | "low";
@@ -181,31 +126,17 @@ export interface DecisionCard {
   };
   alternative: { title: string; why: string }[];
   contentSample: {
-    bookmarksHidden: boolean;
+    bookmarksHidden: boolean; // 小说类按 F1.5 隐藏热门划线
     note: string | null;
     bookmarks: { text: string; kind: "金句" | "结论"; totalCount: number }[];
   };
-  gatesHit: string[];
+  gatesHit: string[]; // 命中的闸门描述（可回测）
   openQuestions: string[];
 }
 
-export interface DecisionHistoryItem {
-  id: number;
-  topic: string;
-  verdict: string;
-  action: string;
-  createdAt: number;
-}
-
-export interface SessionStatus {
-  authenticated: boolean;
-  mode: string;
-  vid?: string;
-}
-
-export function bookStatusLabel(book: ShelfBook): string {
-  if (book.finished) return `读完 · ${book.finishedAt ?? ""}`;
-  if (book.abandoned) return `弃读 · 读到 ${Math.round(book.progress)}%`;
-  if (book.progress === 0) return "想读 · 尚未翻开";
-  return `在读 ${Math.round(book.progress)}% · 上次阅读 ${book.lastReadAt ?? ""}`;
+export interface DecisionAction {
+  cardId: string;
+  action: "read_now" | "shelve" | "skip";
+  trigger?: string; // 放入待读时的触发条件
+  reason?: string; // 排除时的理由
 }

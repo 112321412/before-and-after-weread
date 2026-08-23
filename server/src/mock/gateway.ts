@@ -2,6 +2,18 @@ import type {
   GatewayClient,
   GatewayEnvelope
 } from "../gateway.js";
+import { MOCK_BOOKS } from "./data.js";
+import {
+  STORE_BOOKS,
+  bestBookmarks,
+  chapterTitles,
+  introOf,
+  keywordsOf,
+  localSearch,
+  ratingOf,
+  wordCountOf
+} from "./bookstore.js";
+import { deepVRecommendValue, materializeReviews } from "./reviews.js";
 
 // 实现 GatewayClient 接口的内存网关：同步管道空跑自检用（无 key 场景），
 // 同时充当各接口回包结构的活文档。数据全部确定性，可断言。
@@ -129,16 +141,44 @@ export function createMockGateway(): GatewayClient {
       return envelope({ baseTime: monthStart, readTimes, totalReadTime: 18000, readDays: 10 });
     },
     async fetchBookInfo(bookId: string) {
-      return envelope({ bookId, title: `自检-${bookId}`, author: "作者", wordCount: WORD_COUNTS[bookId] ?? 0, category: "社科" });
+      if (WORD_COUNTS[bookId] !== undefined) {
+        return envelope({ bookId, title: `自检-${bookId}`, author: "作者", wordCount: WORD_COUNTS[bookId], category: "社科" });
+      }
+      const store = STORE_BOOKS.find((book) => book.bookId === bookId);
+      const shelf = MOCK_BOOKS.find((book) => book.bookId === bookId);
+      const rating = ratingOf(bookId);
+      return envelope({
+        bookId,
+        title: store?.title ?? shelf?.title ?? bookId,
+        author: store?.author ?? shelf?.author ?? "",
+        wordCount: wordCountOf(bookId),
+        newRating: rating.rating,
+        newRatingCount: rating.ratingCount,
+        category: store?.category ?? shelf?.category ?? "",
+        intro: introOf(bookId)
+      });
     },
     async fetchBookProgress(bookId: string) {
-      const finished = SHELF_BOOKS.find((book) => book.bookId === bookId)?.finishReading === 1;
+      if (READING_SECONDS[bookId] !== undefined) {
+        const finished = SHELF_BOOKS.find((book) => book.bookId === bookId)?.finishReading === 1;
+        return envelope({
+          bookId,
+          book: {
+            progress: finished ? 100 : 42,
+            recordReadingTime: READING_SECONDS[bookId],
+            ...(finished ? { finishTime: 1770000000 } : {}),
+            updateTime: 1770000000
+          },
+          timestamp: 1770000000
+        });
+      }
+      const shelf = MOCK_BOOKS.find((book) => book.bookId === bookId);
       return envelope({
         bookId,
         book: {
-          progress: finished ? 100 : 42,
-          recordReadingTime: READING_SECONDS[bookId] ?? 0,
-          ...(finished ? { finishTime: 1770000000 } : {}),
+          progress: shelf?.progress ?? 0,
+          recordReadingTime: (shelf?.readMinutes ?? 0) * 60,
+          ...(shelf?.finished ? { finishTime: 1770000000 } : {}),
           updateTime: 1770000000
         },
         timestamp: 1770000000
@@ -146,6 +186,118 @@ export function createMockGateway(): GatewayClient {
     },
     async fetchShelf() {
       return envelope({ books: SHELF_BOOKS, archive: [{ name: "自检书单", bookIds: ["bk-1", "bk-2"] }], bookCount: 6 });
+    },
+    async fetchStoreSearch(keyword: string) {
+      const matched = localSearch(keyword);
+      const ratingRank = (bookId: string) => ratingOf(bookId).rating;
+      const books = matched
+        .sort((a, b) => b.matched - a.matched || ratingRank(b.bookId) - ratingRank(a.bookId))
+        .map((entry, index) => {
+          const store = STORE_BOOKS.find((book) => book.bookId === entry.bookId);
+          const shelf = MOCK_BOOKS.find((book) => book.bookId === entry.bookId);
+          const rating = ratingOf(entry.bookId);
+          return {
+            searchIdx: index + 1,
+            bookInfo: {
+              bookId: entry.bookId,
+              title: store?.title ?? shelf?.title ?? entry.bookId,
+              author: store?.author ?? shelf?.author ?? "",
+              intro: introOf(entry.bookId),
+              category: store?.category ?? shelf?.category ?? "",
+              soldout: 0
+            },
+            newRating: rating.rating,
+            newRatingCount: rating.ratingCount
+          };
+        });
+      return envelope({ sid: "mock-search", hasMore: 0, results: [{ title: "电子书", scope: 17, scopeCount: books.length, currentCount: books.length, books }] });
+    },
+    async fetchReviewList(bookId: string, reviewListType: 1 | 2 | 4) {
+      const band = reviewListType === 1 ? "recommend" : reviewListType === 2 ? "negative" : "neutral";
+      const raw = materializeReviews(bookId, band);
+      return envelope({
+        synckey: 0,
+        reviewsCnt: raw.length,
+        friendCommentCount: 0,
+        deepVRecommendValue: deepVRecommendValue(bookId),
+        reviewsHasMore: 0,
+        reviews: raw.map((review, index) => ({
+          idx: index + 1,
+          review: {
+            review: {
+              reviewId: review.reviewId,
+              content: review.content,
+              star: review.star,
+              isFinish: review.isFinish ? 1 : 0,
+              createTime: review.createTime,
+              author: { name: `书友${String.fromCharCode(0x4e00 + (index * 7) % 0x500)}` }
+            }
+          }
+        }))
+      });
+    },
+    async fetchChapterInfo(bookId: string) {
+      const titles = chapterTitles(bookId);
+      return envelope({
+        bookId,
+        synckey: 0,
+        chapterUpdateTime: 0,
+        chapters: titles.map((title, index) => ({
+          chapterUid: index + 1,
+          chapterIdx: index,
+          title,
+          wordCount: Math.floor(wordCountOf(bookId) / titles.length),
+          level: 1,
+          updateTime: 0,
+          price: 0,
+          paid: 1,
+          isMPChapter: 0,
+          anchors: []
+        }))
+      });
+    },
+    async fetchBestBookmarks(bookId: string) {
+      const marks = bestBookmarks(bookId);
+      return envelope({
+        synckey: 0,
+        totalCount: marks.length,
+        items: marks.map((mark, index) => ({
+          bookId,
+          chapterUid: mark.chapterIdx + 1,
+          range: `cf_${mark.chapterIdx}_${index}`,
+          markText: mark.text,
+          totalCount: mark.totalCount
+        })),
+        chapters: chapterTitles(bookId).map((title, index) => ({ bookId, chapterUid: index + 1, chapterIdx: index, title }))
+      });
+    },
+    async fetchSimilar(bookId: string) {
+      const seedKeywords = keywordsOf(bookId);
+      const similar = [...STORE_BOOKS, ...MOCK_BOOKS.map((book) => ({ bookId: book.bookId, title: book.title, author: book.author, category: book.category, keywords: keywordsOf(book.bookId) }))]
+        .filter((book) => book.bookId !== bookId)
+        .map((book) => ({
+          book,
+          overlap: book.keywords.filter((keyword) => seedKeywords.includes(keyword)).length
+        }))
+        .filter((entry) => entry.overlap > 0)
+        .sort((a, b) => b.overlap - a.overlap || ratingOf(b.book.bookId).rating - ratingOf(a.book.bookId).rating)
+        .slice(0, 6);
+      return envelope({
+        booksimilar: {
+          sessionId: "mock-similar",
+          books: similar.map((entry, index) => ({
+            idx: index + 1,
+            book: {
+              bookInfo: {
+                bookId: entry.book.bookId,
+                title: entry.book.title,
+                author: entry.book.author,
+                intro: introOf(entry.book.bookId)
+              }
+            }
+          }))
+        }
+      });
     }
   };
 }

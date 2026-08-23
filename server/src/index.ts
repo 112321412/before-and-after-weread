@@ -16,6 +16,15 @@ import {
 } from "./sync.js";
 import { MOCK_BOOKS, MOCK_VID, mockWeeklyMinutes } from "./mock/data.js";
 import { svgCover } from "./mock/cover.js";
+import {
+  buildCandidates,
+  buildCard,
+  listDecisions,
+  parseIntent,
+  recordDecision,
+  resolveBookByTitle
+} from "./decide/engine.js";
+import type { IntentResult } from "./decide/types.js";
 
 const MODE = process.env.WEREAD_MODE === "real" ? "real" : "mock";
 const REAL_VID = "gateway-user";
@@ -219,6 +228,86 @@ app.get("/api/stats", requireSession, (req: Request, res: Response) => {
     recentDecisions: decisions,
     speedBaseline: baseline ? { wpm: baseline.words_per_minute, basis: baseline.basis } : null
   });
+});
+
+// ---- 选书决策（F1）----
+
+app.post("/api/decide/intent", requireSession, async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const input = typeof req.body?.input === "string" ? req.body.input.trim() : "";
+    if (!input) {
+      res.status(400).json({ error: "请先说说你想读什么" });
+      return;
+    }
+    const session = (req as AuthedRequest).session;
+    const intent = await parseIntent(input);
+    if (intent.mode === "book") {
+      intent.resolvedBookId = (await resolveBookByTitle(session, intent.topic)) ?? undefined;
+      if (!intent.resolvedBookId) {
+        res.status(404).json({ error: `没有找到《${intent.topic}》，试试主题式的说法` });
+        return;
+      }
+    }
+    res.json(intent);
+  } catch (err) {
+    next(err);
+  }
+});
+
+app.post("/api/decide/candidates", requireSession, async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const session = (req as AuthedRequest).session;
+    const intent = req.body?.intent as IntentResult | undefined;
+    if (!intent || !intent.topic) {
+      res.status(400).json({ error: "缺少阅读目标，请从输入重新开始" });
+      return;
+    }
+    const offset = Math.max(0, Number(req.body?.offset ?? 0) || 0);
+    res.json(await buildCandidates(session, intent, offset));
+  } catch (err) {
+    next(err);
+  }
+});
+
+app.post("/api/decide/card", requireSession, async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const session = (req as AuthedRequest).session;
+    const bookId = typeof req.body?.bookId === "string" ? req.body.bookId : "";
+    const intent = req.body?.intent as IntentResult | undefined;
+    if (!bookId || !intent?.verbatim) {
+      res.status(400).json({ error: "缺少书目或目标" });
+      return;
+    }
+    res.json(await buildCard(session, bookId, intent));
+  } catch (err) {
+    next(err);
+  }
+});
+
+// F1.6 三动作 → 决策档案
+app.post("/api/decision", requireSession, (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const session = (req as AuthedRequest).session;
+    const action = req.body?.action;
+    if (!req.body?.cardId || !["read_now", "shelve", "skip"].includes(action)) {
+      res.status(400).json({ error: "无效的决策动作" });
+      return;
+    }
+    recordDecision(session.vid, {
+      cardId: req.body.cardId,
+      action,
+      trigger: req.body.trigger,
+      reason: req.body.reason
+    });
+    res.json({ ok: true });
+  } catch (err) {
+    next(err);
+  }
+});
+
+app.get("/api/decision", requireSession, (req: Request, res: Response) => {
+  const session = (req as AuthedRequest).session;
+  res.json({ decisions: listDecisions(session.vid) });
 });
 
 // ---- 封面代理：mock 动态生成 SVG；real 走落盘缓存（懒回填为同步预处理的兜底）----

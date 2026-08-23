@@ -74,6 +74,7 @@ export interface BookInfoResponse extends GatewayEnvelope {
   newRatingCount?: number;
   category?: string;
   intro?: string;
+  deepLink?: string;
 }
 
 export interface BookProgressResponse extends GatewayEnvelope {
