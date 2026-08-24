@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api } from "../api";
 import { applyPalette } from "../theme";
-import { bookStatusLabel, type ShelfBook, type StatsResponse } from "../types";
+import { canBrowseShelf, canShowReadingData, resolveShelfSync, syncPercent, syncStageLabel } from "../shelfState";
+import { bookStatusLabel, type ShelfBook, type StatsResponse, type SyncProgress } from "../types";
 import { ShelfScene, prefersReducedMotion, webglAvailable } from "../shelf3d/ShelfScene";
 import { StaticShelf } from "../shelf3d/StaticShelf";
 import { toast } from "../components/Toast";
@@ -17,75 +18,124 @@ export function ShelfPage({ onSyncStateChange }: ShelfPageProps) {
   const [focusIndex, setFocusIndex] = useState(0);
   const [error, setError] = useState("");
   const [syncNotice, setSyncNotice] = useState("");
+  const [sync, setSync] = useState<SyncProgress | null>(null);
+  const [booksLoaded, setBooksLoaded] = useState(false);
+  const [statsLoaded, setStatsLoaded] = useState(false);
+  const heroRef = useRef<HTMLElement>(null);
   const mountRef = useRef<HTMLDivElement>(null);
   const sceneRef = useRef<ShelfScene | null>(null);
   const use3D = useMemo(() => webglAvailable() && !prefersReducedMotion(), []);
 
   useEffect(() => {
-    onSyncStateChange("syncing", "正在同步书架");
     let cancelled = false;
-    const applySnapshot = (shelf: Awaited<ReturnType<typeof api.shelf>>, statsData: StatsResponse) => {
+
+    const fail = (message: string) => {
       if (cancelled) return;
-      setBooks(shelf.books);
-      setStats(statsData);
-      if (shelf.sync?.phase === "error") {
-        const message = shelf.sync.error ?? "真实数据同步失败，可更换 Key 重试";
-        setSyncNotice(message);
-        onSyncStateChange("error", message);
-      } else if (shelf.mode === "real" && shelf.sync?.phase !== "done") {
-        setSyncNotice("");
-        onSyncStateChange("syncing", "正在同步真实数据");
-      } else {
-        setSyncNotice("");
-        onSyncStateChange("ok", shelf.mode === "mock" ? "演示书架已同步" : "真实数据已同步");
+      setSync({ phase: "error", current: 0, total: 0, percent: 0, error: message });
+      setStats(null);
+      setStatsLoaded(false);
+      setSyncNotice(message);
+      onSyncStateChange("error", "同步失败");
+    };
+
+    const loadStats = async (shelf: Awaited<ReturnType<typeof api.shelf>>) => {
+      if (cancelled || shelf.books.length === 0) {
+        setStats(null);
+        setStatsLoaded(false);
+        return;
+      }
+      try {
+        const statsData = await api.stats();
+        if (cancelled) return;
+        setStats(statsData);
+        setStatsLoaded(true);
+      } catch {
+        if (cancelled) return;
+        setStats(null);
+        setStatsLoaded(false);
+        setSyncNotice("书架已同步，但阅读数据暂不可用，请稍后重试。");
       }
     };
+
+    const applySnapshot = async (shelf: Awaited<ReturnType<typeof api.shelf>>, settledSync?: SyncProgress) => {
+      if (cancelled) return;
+      const nextSync = settledSync ?? resolveShelfSync(shelf);
+      setBooks(shelf.books);
+      setBooksLoaded(true);
+      setSync(nextSync);
+      setError("");
+      if (nextSync?.phase === "error") {
+        fail(nextSync.error ?? "真实数据同步失败，可重试或更换 Key");
+        return;
+      }
+      if (nextSync?.phase !== "done") {
+        setSyncNotice("");
+        onSyncStateChange("syncing", "同步中");
+        return;
+      }
+      setSyncNotice(shelf.books.length > 0 ? "" : "同步完成，但没有可展示的书架数据。");
+      onSyncStateChange("ok", shelf.mode === "mock" ? "演示书架已同步" : "真实数据已同步");
+      await loadStats(shelf);
+    };
+
     const pollInitialSync = async () => {
       try {
         for (;;) {
           await new Promise((resolve) => window.setTimeout(resolve, 500));
           const progress = await api.syncProgress();
           if (cancelled) return;
+          setSync(progress);
           if (progress.phase === "error") {
-            const message = progress.error ?? "真实数据同步失败，可更换 Key 重试";
-            setSyncNotice(message);
-            onSyncStateChange("error", message);
+            fail(progress.error ?? "真实数据同步失败，可重试或更换 Key");
             return;
           }
           if (progress.phase === "done") {
             const freshShelf = await api.shelf();
-            const freshStats = await api.stats();
-            applySnapshot(freshShelf, freshStats);
+            await applySnapshot(freshShelf, progress);
             return;
           }
-          onSyncStateChange("syncing", `正在同步真实数据 ${Math.round(progress.percent * 100)}%`);
+          setSyncNotice("");
+          onSyncStateChange("syncing", "同步中");
         }
       } catch (err) {
         if (cancelled) return;
-        const message = err instanceof Error ? err.message : "真实数据同步失败，可更换 Key 重试";
-        setSyncNotice(message);
-        onSyncStateChange("error", message);
+        fail(err instanceof Error ? err.message : "真实数据同步失败，可重试或更换 Key");
       }
     };
-    Promise.all([api.shelf(), api.stats()])
-      .then(([shelf, statsData]) => {
-        applySnapshot(shelf, statsData);
-        if (shelf.mode === "real" && shelf.sync && shelf.sync.phase !== "done" && shelf.sync.phase !== "error") {
-          void pollInitialSync();
+
+    setSync(null);
+    setStats(null);
+    setStatsLoaded(false);
+    setBooksLoaded(false);
+    onSyncStateChange("syncing", "同步中");
+    api
+      .shelf()
+      .then(async (shelf) => {
+        const nextSync = resolveShelfSync(shelf);
+        setBooks(shelf.books);
+        setBooksLoaded(true);
+        setSync(nextSync);
+        if (nextSync?.phase === "done" || nextSync?.phase === "error") {
+          await applySnapshot(shelf, nextSync);
+          return;
         }
+        await pollInitialSync();
       })
       .catch((err) => {
         if (cancelled) return;
         setError(err instanceof Error ? err.message : "书架加载失败");
-        onSyncStateChange("error", "同步失败");
+        fail(err instanceof Error ? err.message : "同步失败");
       });
     return () => {
       cancelled = true;
     };
   }, [onSyncStateChange]);
 
+  const canBrowse = canBrowseShelf(sync, booksLoaded, books.length);
+  const showReadingData = canShowReadingData(sync, booksLoaded, books.length, statsLoaded);
+
   useEffect(() => {
-    if (!use3D || books.length === 0 || !mountRef.current || sceneRef.current) return;
+    if (!canBrowse || !use3D || books.length === 0 || !mountRef.current || sceneRef.current) return;
     const scene = new ShelfScene(mountRef.current, {
       books,
       onFocus: (index) => setFocusIndex(index),
@@ -96,13 +146,13 @@ export function ShelfPage({ onSyncStateChange }: ShelfPageProps) {
       scene.dispose();
       sceneRef.current = null;
     };
-  }, [use3D, books]);
+  }, [canBrowse, use3D, books]);
 
-  // 焦点书 → 10 键调色板写入 :root，页面背景随之 720ms 过渡
+  // 焦点书 → 只更新书架 hero 独立背景，应用外壳保持中性
   useEffect(() => {
     const book = books[focusIndex];
-    if (book) applyPalette(book.palette);
-  }, [books, focusIndex]);
+    if (book && canBrowse) applyPalette(book.palette, heroRef.current);
+  }, [books, focusIndex, canBrowse]);
 
   const nudge = useCallback(
     (direction: number) => {
@@ -119,62 +169,115 @@ export function ShelfPage({ onSyncStateChange }: ShelfPageProps) {
 
   return (
     <>
-      <section className="shelf-hero" aria-label="书架">
-        {syncNotice && (
-          <div className="shelf-sync-warning" role="status">
-            {syncNotice} {books.length > 0 ? "当前显示已有本地快照。" : "暂无可用的本地书架快照。"}
-          </div>
-        )}
-        {error ? (
-          <div className="shelf-error">
-            <p>{error}</p>
-            <button type="button" onClick={() => window.location.reload()}>
-              重试
-            </button>
-          </div>
-        ) : use3D && books.length > 0 ? (
-          <>
-            <div className="shelf-canvas-mount" ref={mountRef} aria-label="三维书架：滚轮或左右箭头切换焦点书" />
-            <div className="hero-bottom-fade" aria-hidden="true" />
-          </>
-        ) : books.length > 0 ? (
-          <StaticShelf
-            books={books}
-            focusIndex={focusIndex}
-            onFocus={setFocusIndex}
-            onActivate={() => toast("书籍详情页 · 本期预留")}
-          />
+      <section ref={heroRef} className="shelf-hero" aria-label="书架" data-sync-phase={sync?.phase ?? "pending"}>
+        <div className="shelf-hero-background" aria-hidden="true" />
+        {canBrowse ? (
+          use3D ? (
+            <>
+              <div className="shelf-canvas-mount" ref={mountRef} aria-label="三维书架：滚轮或左右箭头切换焦点书" />
+              <div className="hero-bottom-fade" aria-hidden="true" />
+            </>
+          ) : (
+            <StaticShelf
+              books={books}
+              focusIndex={focusIndex}
+              onFocus={setFocusIndex}
+              onActivate={() => toast("书籍详情页 · 本期预留")}
+            />
+          )
         ) : (
-          <div className="shelf-loading">{syncNotice ? "暂无可用的本地书架快照。" : "正在取出你的书架…"}</div>
+          <SyncStatePanel
+            sync={sync}
+            message={error || syncNotice}
+            onRetry={() => window.location.reload()}
+          />
         )}
 
-        <div className="shelf-info">
-          <button type="button" className="shelf-arrow" aria-label="上一本" onClick={() => nudge(-1)}>
-            ‹
-          </button>
-          <div className="shelf-meta">
-            <h2 className="shelf-title">{focused?.title ?? ""}</h2>
-            <p className="shelf-status">
-              {focused ? `${focused.author} · ${bookStatusLabel(focused)}${focused.highlights > 0 ? ` · 划线 ${focused.highlights}` : ""}` : ""}
-            </p>
-          </div>
-          <button type="button" className="shelf-arrow" aria-label="下一本" onClick={() => nudge(1)}>
-            ›
-          </button>
-          <span className="shelf-counter">
-            {String(focusIndex + 1).padStart(2, "0")} / {String(books.length).padStart(2, "0")}
-          </span>
-        </div>
-        <button
-          type="button"
-          className="scroll-hint"
-          onClick={() => document.getElementById("stats-section")?.scrollIntoView({ behavior: "smooth" })}
-        >
-          ↓ 下滑查看阅读数据
-        </button>
+        {showReadingData && (
+          <>
+            <div className="shelf-info">
+              <button type="button" className="shelf-arrow" aria-label="上一本" onClick={() => nudge(-1)}>
+                ‹
+              </button>
+              <div className="shelf-meta">
+                <h2 className="shelf-title">{focused?.title ?? ""}</h2>
+                <p className="shelf-status">
+                  {focused ? `${focused.author} · ${bookStatusLabel(focused)}${focused.highlights > 0 ? ` · 划线 ${focused.highlights}` : ""}` : ""}
+                </p>
+              </div>
+              <button type="button" className="shelf-arrow" aria-label="下一本" onClick={() => nudge(1)}>
+                ›
+              </button>
+              <span className="shelf-counter">
+                {String(focusIndex + 1).padStart(2, "0")} / {String(books.length).padStart(2, "0")}
+              </span>
+            </div>
+            <button
+              type="button"
+              className="scroll-hint"
+              onClick={() => document.getElementById("stats-section")?.scrollIntoView({ behavior: "smooth" })}
+            >
+              ↓ 下滑查看阅读数据
+            </button>
+          </>
+        )}
       </section>
-      <StatsSection stats={stats} />
+      {showReadingData && stats ? <StatsSection stats={stats} /> : null}
     </>
+  );
+}
+
+function SyncStatePanel({
+  sync,
+  message,
+  onRetry
+}: {
+  sync: SyncProgress | null;
+  message: string;
+  onRetry: () => void;
+}) {
+  const failed = sync?.phase === "error";
+  return (
+    <div className="shelf-sync-state" role="status" aria-live="polite">
+      <SyncOrbit sync={sync} />
+      {message && <p className={`shelf-sync-message${failed ? " is-error" : ""}`}>{message}</p>}
+      {failed && (
+        <button type="button" className="shelf-retry" onClick={onRetry}>
+          重试或更换 Key
+        </button>
+      )}
+    </div>
+  );
+}
+
+function SyncOrbit({ sync }: { sync: SyncProgress | null }) {
+  const percent = syncPercent(sync);
+  const circumference = 2 * Math.PI * 48;
+  return (
+    <div className="sync-orbit-wrap">
+      <svg
+        className="sync-orbit"
+        viewBox="0 0 120 120"
+        role="progressbar"
+        aria-valuemin={0}
+        aria-valuemax={100}
+        aria-valuenow={percent}
+        aria-label={`同步进度 ${percent}%：${syncStageLabel(sync)}`}
+      >
+        <circle className="sync-orbit-track" cx="60" cy="60" r="48" />
+        <circle
+          className="sync-orbit-progress"
+          cx="60"
+          cy="60"
+          r="48"
+          style={{ strokeDasharray: circumference, strokeDashoffset: circumference * (1 - percent / 100) }}
+        />
+      </svg>
+      <div className="sync-orbit-copy" aria-hidden="true">
+        <strong className="sync-orbit-percent">{percent}%</strong>
+        <span className="sync-orbit-stage">{syncStageLabel(sync)}</span>
+      </div>
+    </div>
   );
 }
 

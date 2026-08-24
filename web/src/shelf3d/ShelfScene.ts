@@ -22,6 +22,15 @@ const clamp = THREE.MathUtils.clamp;
 const smoothstep = (value: number) => value * value * (3 - 2 * value);
 const mod = (value: number, length: number) => ((value % length) + length) % length;
 
+/** 书架背景取封面主色，但压低饱和度并混入中性底色，避免主题色接管应用外壳。 */
+export function restrainedHeroColor(value: string): THREE.Color {
+  const color = new THREE.Color(value);
+  const hsl = { h: 0, s: 0, l: 0 };
+  color.getHSL(hsl);
+  color.setHSL(hsl.h, Math.min(hsl.s, 0.48), clamp(hsl.l, 0.26, 0.68));
+  return color.lerp(new THREE.Color("#1f2430"), 0.55);
+}
+
 export function webglAvailable(): boolean {
   try {
     const canvas = document.createElement("canvas");
@@ -44,7 +53,7 @@ interface Rig {
   root: THREE.Group;
   mesh: THREE.Mesh<RoundedBoxGeometry, THREE.Material[]>;
   spineMaterial: THREE.MeshPhysicalMaterial;
-  coverMaterial: THREE.MeshPhysicalMaterial;
+  coverMaterial: THREE.MeshBasicMaterial;
   backMaterial: THREE.MeshPhysicalMaterial;
   bookIndex: number;
   height: number;
@@ -95,14 +104,7 @@ export class ShelfScene {
   private raycaster = new THREE.Raycaster();
 
   private theme = {
-    background: new THREE.Color(),
-    shelf: new THREE.Color(),
-    shelfDark: new THREE.Color(),
-    hemi: new THREE.Color(),
-    hemiGround: new THREE.Color(),
-    key: new THREE.Color(),
-    fill: new THREE.Color(),
-    rim: new THREE.Color()
+    background: new THREE.Color()
   };
   private themeMoving = false;
 
@@ -139,7 +141,7 @@ export class ShelfScene {
     this.camera.position.set(0, 2.05, 8.4);
     this.camera.lookAt(0, 1.55, 0);
 
-    this.sceneBackground = new THREE.Color(this.books[0].palette.paper);
+    this.sceneBackground = restrainedHeroColor(this.books[0].palette.paper);
     this.scene.background = this.sceneBackground;
 
     const pmrem = new THREE.PMREMGenerator(this.renderer);
@@ -267,13 +269,12 @@ export class ShelfScene {
       metalness: 0.02,
       transparent: true
     });
-    const coverMaterial = new THREE.MeshPhysicalMaterial({
+    // 封面纹理使用原图颜色，不受场景灯光或主题色染色；保留深度测试避免书体穿透。
+    const coverMaterial = new THREE.MeshBasicMaterial({
       color: 0x888888,
-      roughness: 0.9,
-      metalness: 0.03,
-      clearcoat: 0.06,
-      clearcoatRoughness: 0.72,
-      transparent: true
+      transparent: true,
+      depthTest: true,
+      depthWrite: true
     });
     const backMaterial = new THREE.MeshPhysicalMaterial({
       color: 0x666666,
@@ -344,10 +345,10 @@ export class ShelfScene {
     rig.mesh.scale.set(width, height, depth);
     const dominant = new THREE.Color(book.dominant);
     rig.spineMaterial.color.copy(dominant).multiplyScalar(0.9);
-    rig.coverMaterial.color.copy(dominant);
     rig.backMaterial.color.copy(dominant).multiplyScalar(0.55);
     rig.opacity = 0;
     const textures = this.textureCache.get(book.bookId);
+    rig.coverMaterial.color.set(textures ? 0xffffff : dominant);
     if (textures) {
       this.textureCache.delete(book.bookId);
       this.textureCache.set(book.bookId, textures); // 刷新 LRU 序
@@ -386,6 +387,7 @@ export class ShelfScene {
         const rig = this.rigs.get(index);
         if (rig && rig.bookIndex === index) {
           rig.coverMaterial.map = textures.cover;
+          rig.coverMaterial.color.set(0xffffff);
           rig.spineMaterial.map = textures.spine;
           rig.coverMaterial.needsUpdate = true;
           rig.spineMaterial.needsUpdate = true;
@@ -424,24 +426,9 @@ export class ShelfScene {
   // ---- 主题（三维侧）：调色板 → 场景颜色目标，渲染循环内指数趋近 ----
 
   private applyTheme(palette: Palette, immediate = false): void {
-    this.theme.background.set(palette.paper);
-    this.theme.shelf.set(palette.shelf);
-    this.theme.shelfDark.set(palette.shelfDark);
-    this.theme.hemi.set(palette.paperPale);
-    this.theme.hemiGround.set(palette.shelf);
-    this.theme.key.set(palette.light);
-    this.theme.fill.set(palette.fill);
-    this.theme.rim.set(palette.accent);
+    this.theme.background.copy(restrainedHeroColor(palette.paper));
     if (immediate) {
       this.sceneBackground.copy(this.theme.background);
-      this.shelfMaterial.color.copy(this.theme.shelf);
-      this.shelfDarkMaterial.color.copy(this.theme.shelfDark);
-      this.contactShadowMaterial.color.copy(this.theme.shelfDark);
-      this.lights.hemi.color.copy(this.theme.hemi);
-      this.lights.hemi.groundColor.copy(this.theme.hemiGround);
-      this.lights.key.color.copy(this.theme.key);
-      this.lights.fill.color.copy(this.theme.fill);
-      this.lights.rim.color.copy(this.theme.rim);
       this.themeMoving = false;
     } else {
       this.themeMoving = true;
@@ -452,26 +439,13 @@ export class ShelfScene {
     if (!this.themeMoving) return;
     const amount = 1 - Math.exp(-delta * 5.5); // 与页面 720ms CSS 过渡同步的趋近速率
     this.sceneBackground.lerp(this.theme.background, amount);
-    this.shelfMaterial.color.lerp(this.theme.shelf, amount);
-    this.shelfDarkMaterial.color.lerp(this.theme.shelfDark, amount);
-    this.contactShadowMaterial.color.lerp(this.theme.shelfDark, amount);
-    this.lights.hemi.color.lerp(this.theme.hemi, amount);
-    this.lights.hemi.groundColor.lerp(this.theme.hemiGround, amount);
-    this.lights.key.color.lerp(this.theme.key, amount);
-    this.lights.fill.color.lerp(this.theme.fill, amount);
-    this.lights.rim.color.lerp(this.theme.rim, amount);
     if (this.converged()) this.themeMoving = false;
   }
 
   private converged(): boolean {
     const gap = (a: THREE.Color, b: THREE.Color) =>
       (a.r - b.r) ** 2 + (a.g - b.g) ** 2 + (a.b - b.b) ** 2;
-    const largest = Math.max(
-      gap(this.sceneBackground, this.theme.background),
-      gap(this.shelfMaterial.color, this.theme.shelf),
-      gap(this.lights.key.color, this.theme.key),
-      gap(this.lights.hemi.color, this.theme.hemi)
-    );
+    const largest = gap(this.sceneBackground, this.theme.background);
     return largest < 0.0000025;
   }
 

@@ -2,7 +2,7 @@ import { useEffect, useRef } from "react";
 import { bookStatusLabel, type ShelfBook } from "../types";
 
 // 降级书架：prefers-reduced-motion 或 WebGL 不可用时替代三维场景。
-// 封面网格 + 主题色仍然跟随 CSS 变量（点击换焦点书即换全站调色板）。
+// 封面网格 + 书架背景色（点击换焦点书只改变书架背景）。
 interface StaticShelfProps {
   books: ShelfBook[];
   focusIndex: number;
@@ -37,7 +37,7 @@ export function StaticShelf({ books, focusIndex, onFocus, onActivate }: StaticSh
           </button>
         ))}
       </div>
-      <p className="static-shelf-note">已按系统偏好切换为静态书架；点击书籍切换主题色，再次点击查看详情提示。</p>
+      <p className="static-shelf-note">已按系统偏好切换为静态书架；点击书籍切换书架背景，再次点击查看详情提示。</p>
     </div>
   );
 }

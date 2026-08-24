@@ -6,20 +6,10 @@ interface SetupPageProps {
   onReady: () => void;
 }
 
-// mock 模式的本地模拟进度（接口即时返回，固定 2 秒走完同步观感）
-const MOCK_STAGES = [
-  { until: 0.3, label: "正在验证 Key" },
-  { until: 0.7, label: "正在同步书架" },
-  { until: 0.92, label: "正在提取封面主色" },
-  { until: 1, label: "完成" }
-];
-
 export function SetupPage({ mode, onReady }: SetupPageProps) {
   const [key, setKey] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
-  const [progress, setProgress] = useState(0);
-  const [stageLabel, setStageLabel] = useState("");
 
   async function submit(inputKey: string) {
     const normalizedKey = inputKey.trim();
@@ -30,7 +20,6 @@ export function SetupPage({ mode, onReady }: SetupPageProps) {
       return;
     }
     setBusy(true);
-    setProgress(0);
     try {
       const { sid, mode: sessionMode } = await api.createSession(mode === "real" ? normalizedKey : "");
       setSid(sid);
@@ -38,31 +27,12 @@ export function SetupPage({ mode, onReady }: SetupPageProps) {
         // 进入网站与上游同步解耦；同步状态在书架/设置页展示。
         onReady();
         return;
-      } else {
-        await animateMockProgress();
       }
       onReady();
     } catch (err) {
       setError(err instanceof Error ? err.message : "接入失败");
       setBusy(false);
     }
-  }
-
-  function animateMockProgress(): Promise<void> {
-    const startedAt = performance.now();
-    return new Promise((resolve) => {
-      const tick = () => {
-        const value = Math.min(1, (performance.now() - startedAt) / 2000);
-        setProgress(value);
-        setStageLabel(MOCK_STAGES.find((stage) => value < stage.until)?.label ?? "完成");
-        if (value >= 1) {
-          resolve();
-          return;
-        }
-        requestAnimationFrame(tick);
-      };
-      requestAnimationFrame(tick);
-    });
   }
 
   return (
@@ -76,14 +46,8 @@ export function SetupPage({ mode, onReady }: SetupPageProps) {
         </p>
 
         {busy ? (
-          <div className="setup-sync">
-            <div className="sync-stage">
-              {stageLabel}
-              <span className="sync-count">{Math.round(progress * 100)}%</span>
-            </div>
-            <div className="sync-track">
-              <div className="sync-fill" style={{ width: `${Math.round(progress * 100)}%` }} />
-            </div>
+          <div className="setup-sync" role="status" aria-live="polite">
+            <div className="sync-stage">正在建立会话…</div>
           </div>
         ) : (
           <>

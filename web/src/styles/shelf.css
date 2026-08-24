@@ -5,12 +5,30 @@
   height: 100vh;
   min-height: 620px;
   overflow: hidden;
+  isolation: isolate;
+  background: var(--paper);
+}
+
+/* 焦点书色彩只属于书架 hero 背景；中性混合限制视觉强度。 */
+.shelf-hero-background {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  background:
+    radial-gradient(circle at 50% 38%, color-mix(in srgb, var(--shelf-paper-pale, var(--paper-pale)) 22%, transparent), transparent 54%),
+    linear-gradient(135deg,
+      color-mix(in srgb, var(--paper) 82%, var(--shelf-paper, var(--paper)) 18%),
+      color-mix(in srgb, var(--paper-deep) 88%, var(--shelf-paper-deep, var(--paper-deep)) 12%));
+  filter: saturate(0.78) brightness(1.04);
+  transition: background 720ms var(--ease-out), filter 720ms var(--ease-out);
 }
 
 /* 画布不铺满整个 hero：底部留出滚动带（滚轮在画布上横滑书架，在滚动带上翻页） */
 .shelf-canvas-mount {
   position: absolute;
   inset: 0 0 150px 0;
+  z-index: 1;
 }
 
 .hero-bottom-fade {
@@ -19,6 +37,7 @@
   right: 0;
   bottom: 0;
   height: 210px;
+  z-index: 2;
   pointer-events: none;
   background: linear-gradient(to bottom, transparent, color-mix(in srgb, var(--paper) 92%, transparent));
   transition: background 720ms var(--ease-out);
@@ -59,6 +78,91 @@
   font-size: 13px;
   line-height: 1.6;
   text-align: center;
+}
+
+.shelf-sync-state {
+  position: absolute;
+  inset: 0;
+  z-index: 6;
+  display: grid;
+  align-content: center;
+  justify-items: center;
+  gap: 18px;
+  padding: 120px 24px 150px;
+  color: var(--ink-soft);
+  text-align: center;
+}
+
+.sync-orbit-wrap {
+  position: relative;
+  width: 176px;
+  height: 176px;
+}
+
+.sync-orbit {
+  display: block;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+}
+
+.sync-orbit-track,
+.sync-orbit-progress {
+  fill: none;
+  stroke-width: 7;
+}
+
+.sync-orbit-track {
+  stroke: color-mix(in srgb, var(--ink) 14%, transparent);
+}
+
+.sync-orbit-progress {
+  stroke: var(--accent);
+  stroke-linecap: round;
+  transform: rotate(-90deg);
+  transform-origin: 60px 60px;
+  transition: stroke-dashoffset 300ms var(--ease-out);
+}
+
+.sync-orbit-copy {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  align-content: center;
+  justify-items: center;
+  gap: 4px;
+}
+
+.sync-orbit-percent {
+  font-size: 28px;
+  font-variant-numeric: tabular-nums;
+  color: var(--ink);
+}
+
+.sync-orbit-stage {
+  max-width: 130px;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--ink-soft);
+}
+
+.shelf-sync-message {
+  max-width: 440px;
+  margin: 0;
+  font-size: 14px;
+  line-height: 1.7;
+}
+
+.shelf-sync-message.is-error {
+  color: #e8b29e;
+}
+
+.shelf-retry {
+  padding: 9px 18px;
+  border: 1px solid var(--rule);
+  border-radius: 999px;
+  color: var(--ink);
+  background: color-mix(in srgb, var(--paper-deep) 70%, transparent);
 }
 
 .shelf-error button {
@@ -178,6 +282,7 @@
 .static-shelf-wrap {
   position: absolute;
   inset: 0;
+  z-index: 1;
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -207,12 +312,16 @@
 }
 
 .static-book img {
+  position: relative;
+  z-index: 2;
   width: 100%;
   aspect-ratio: 2 / 3;
   object-fit: cover;
   border-radius: 4px;
   box-shadow: 0 10px 26px rgba(0, 0, 0, 0.32);
   background: var(--book-dominant, var(--shelf));
+  filter: none;
+  mix-blend-mode: normal;
 }
 
 .static-book.focused {

@@ -13,8 +13,7 @@ export function loadImage(url: string): Promise<HTMLImageElement> {
   });
 }
 
-// 封面图 → 768×1152 画布，叠左右边缘明暗渐变（对齐参考实现 makeCoverTexture 的 edgeShade），
-// 让平面贴图产生书页装帧的立体暗示
+// 封面图 → 768×1152 画布。封面保留原图颜色，立体层次交给书体与深度缓冲处理。
 export function drawCoverCanvas(image: HTMLImageElement): HTMLCanvasElement {
   const canvas = document.createElement("canvas");
   canvas.width = COVER_TEXTURE_WIDTH;
@@ -22,13 +21,6 @@ export function drawCoverCanvas(image: HTMLImageElement): HTMLCanvasElement {
   const ctx = canvas.getContext("2d");
   if (!ctx) throw new Error("无法创建 2D 画布");
   ctx.drawImage(image, 0, 0, COVER_TEXTURE_WIDTH, COVER_TEXTURE_HEIGHT);
-  const edgeShade = ctx.createLinearGradient(0, 0, COVER_TEXTURE_WIDTH, 0);
-  edgeShade.addColorStop(0, "rgba(0,0,0,0.16)");
-  edgeShade.addColorStop(0.055, "rgba(255,255,255,0.015)");
-  edgeShade.addColorStop(0.93, "rgba(255,255,255,0)");
-  edgeShade.addColorStop(1, "rgba(0,0,0,0.1)");
-  ctx.fillStyle = edgeShade;
-  ctx.fillRect(0, 0, COVER_TEXTURE_WIDTH, COVER_TEXTURE_HEIGHT);
   return canvas;
 }
 

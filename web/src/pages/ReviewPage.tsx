@@ -410,7 +410,7 @@ function formatMonthDay(timestamp: number): string {
   return `${date.getMonth() + 1}-${String(date.getDate()).padStart(2, "0")}`;
 }
 
-function buildRecallMarkdown(
+export function buildRecallMarkdown(
   draft: RecallDraft | null,
   paragraphs: string[],
   sectionRanges: { start: number; end: number }[],
@@ -471,7 +471,7 @@ function buildRecallMarkdown(
   return lines.join("\n");
 }
 
-function buildThemeMarkdown(theme: ThemeResult | null, reflections: Record<string, string>, removed: Set<string>): string {
+export function buildThemeMarkdown(theme: ThemeResult | null, reflections: Record<string, string>, removed: Set<string>): string {
   if (!theme) return "";
   const lines = [`# 观点卡片组 · ${theme.question}`, "", `素材：${theme.totalMatches} 条痕迹 · ${theme.books.length} 本书`, ""];
   theme.themes.forEach((group) => {
