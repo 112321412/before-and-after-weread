@@ -27,7 +27,7 @@ npm run dev
 | mock（默认） | `npm run dev` | 12 本虚构中文书，封面由服务端动态生成 SVG（`/api/cover/:bookId`），调色板从封面底色推导 |
 | real | `WEREAD_MODE=real npm run dev:server` | 微信读书 Agent API Gateway（`POST https://i.weread.qq.com/api/agent/gateway`，Bearer key，参数平铺 + `skill_version: "1.0.4"`）。封面由服务端代理拉取并落盘缓存（`server/data/covers/`），主色用 sharp 提取后写回 `book_cache` |
 
-真实模式在 Key 配置门输入 `wrk-` 开头的 Key：服务端调 `/user/notebooks` 验证 → 建会话并立即返回 → 后台跑全量同步（笔记本翻页 → 书架 → 划线/想法并发 ≤8 → 封面批量取主色 → readdata 周分桶 → 速度基线），前端轮询 `GET /api/sync/progress` 显示真实进度。之后每次进入书架页做增量同步（笔记概览 sort 对比，只重拉变化的书）。Key 只存服务端会话内存，不落盘、不写日志。
+真实模式在 Key 配置门输入微信读书 API Key：服务端调 `/user/notebooks` 验证 → 建会话并立即返回 → 后台跑全量同步（笔记本翻页 → 书架 → 划线/想法并发 ≤8 → 封面批量取主色 → readdata 周分桶 → 速度基线），前端轮询 `GET /api/sync/progress` 显示真实进度。之后每次进入书架页做增量同步（笔记概览 sort 对比，只重拉变化的书）。Key 只存服务端会话内存，不落盘、不写日志。
 
 无 key 时可用 `server/src/mock/gateway.ts`（实现 GatewayClient 接口的内存网关）空跑整条同步管道自检。
 

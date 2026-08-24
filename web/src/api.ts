@@ -27,7 +27,7 @@ export function clearSid(): void {
 }
 
 export function isWeReadKey(value: string): boolean {
-  return /^wrk-.+/.test(value.trim());
+  return Boolean(value.trim());
 }
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {

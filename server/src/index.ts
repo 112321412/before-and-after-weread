@@ -67,7 +67,7 @@ app.post("/api/session", async (req: Request, res: Response, next: NextFunction)
     const key = typeof req.body?.key === "string" ? req.body.key.trim() : "";
     if (MODE === "real") {
       if (!isWeReadKey(key)) {
-        res.status(400).json({ error: "请输入微信读书 API Key（必须以 wrk- 开头）" });
+        res.status(400).json({ error: "请输入微信读书 API Key" });
         return;
       }
       // 验证 key（拉笔记本第一页），通过即建会话；全量同步在后台跑，进度走 /api/sync/progress

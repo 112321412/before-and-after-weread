@@ -38,7 +38,7 @@ export function SetupPage({ mode, onReady }: SetupPageProps) {
     const normalizedKey = inputKey.trim();
     setError("");
     if (mode === "real" && !isWeReadKey(normalizedKey)) {
-      setError("请输入 wrk- 开头的微信读书 API Key");
+      setError("请输入微信读书 API Key");
       setBusy(false);
       return;
     }
@@ -118,10 +118,10 @@ export function SetupPage({ mode, onReady }: SetupPageProps) {
             >
               <input
                 className="setup-input"
-                type="password"
+                type="text"
                 value={key}
-                placeholder="wrk-xxxxxxxx（微信读书 API Key）"
-                autoComplete="new-password"
+                placeholder="请输入微信读书 API Key"
+                autoComplete="off"
                 spellCheck={false}
                 autoCapitalize="none"
                 autoCorrect="off"
