@@ -1,6 +1,8 @@
 // 微信读书 Agent API Gateway 客户端（真实模式）。
 // 单一入口 callGateway：自动注入 skill_version、Bearer key、参数平铺、errcode 非 0 抛统一错误。
 // 新增接口 = 在返回对象上加一个十几行的薄封装，骨架零改动。
+import { normalizeRating } from "./reading.js";
+
 const GATEWAY_URL = "https://i.weread.qq.com/api/agent/gateway";
 const SKILL_VERSION = "1.0.4";
 const GATEWAY_AUTH_ERROR = "Key 无效、过期或权限不匹配，请重新生成";
@@ -231,7 +233,10 @@ export function createGateway(key: string): GatewayClient {
     fetchMyReviews: (bookId: string, synckey = 0) =>
       callGateway<MyReviewsResponse>("/review/list/mine", { bookid: bookId, count: 20, synckey }),
     fetchReadData: (mode) => callGateway<ReadDataResponse>("/readdata/detail", { mode }),
-    fetchBookInfo: (bookId: string) => callGateway<BookInfoResponse>("/book/info", { bookId }),
+    fetchBookInfo: async (bookId: string) => {
+      const info = await callGateway<BookInfoResponse>("/book/info", { bookId });
+      return { ...info, newRating: normalizeRating(info.newRating) };
+    },
     fetchBookProgress: (bookId: string) => callGateway<BookProgressResponse>("/book/getprogress", { bookId }),
     fetchShelf: () => callGateway<ShelfSyncResponse>("/shelf/sync"),
     // 找书固定电子书 scope=10

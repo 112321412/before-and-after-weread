@@ -20,6 +20,35 @@ interface BookListItem {
   thoughts: number;
 }
 
+interface ReviewBookSqlRow {
+  book_id: string;
+  title: string;
+  author: string | null;
+  finished: number;
+  abandoned: number;
+  progress: number;
+  read_minutes: number;
+  last_read_at: string | null;
+  finished_at: string | null;
+  highlights: number;
+  thoughts: number;
+}
+
+export function mapReviewBookRow(row: ReviewBookSqlRow): BookListItem {
+  return {
+    bookId: row.book_id,
+    title: row.title,
+    author: row.author ?? "",
+    group: row.finished === 1 ? "finished" : row.abandoned === 1 ? "abandoned" : "reading",
+    progress: row.progress,
+    readMinutes: row.read_minutes,
+    lastReadAt: row.last_read_at,
+    finishedAt: row.finished_at,
+    highlights: row.highlights,
+    thoughts: row.thoughts
+  };
+}
+
 reviewRouter.get("/api/review/books", requireSession, (req: Request, res: Response) => {
   const session = (req as AuthedRequest).session;
   const rows = db
@@ -32,11 +61,8 @@ reviewRouter.get("/api/review/books", requireSession, (req: Request, res: Respon
        WHERE s.vid = ? AND (s.finished = 1 OR s.abandoned = 1 OR s.progress > 0)
        ORDER BY COALESCE(s.finished_at, s.last_read_at) DESC`
     )
-    .all(session.vid) as (Omit<BookListItem, "group"> & { finished: number; abandoned: number })[];
-  const books: BookListItem[] = rows.map(({ finished, abandoned, ...row }) => ({
-    ...row,
-    group: finished === 1 ? "finished" : abandoned === 1 ? "abandoned" : "reading"
-  }));
+    .all(session.vid) as ReviewBookSqlRow[];
+  const books = rows.map(mapReviewBookRow);
   res.json({ books });
 });
 

@@ -4,6 +4,7 @@ import type { BookInfoResponse, ChapterInfoResponse, GatewayClient, ReviewListRe
 import { createMockGateway } from "../mock/gateway.js";
 import { keywordsOf } from "../mock/bookstore.js";
 import { materializeReviews } from "../mock/reviews.js";
+import { normalizeRating, resolveWordCount } from "../reading.js";
 import type { Session } from "../sync.js";
 import { applyGates, ruleVerdict, type GateInput } from "./gates.js";
 import { expandKeywordsRules, parseIntentRules } from "./rules.js";
@@ -112,7 +113,7 @@ export async function buildCandidates(
           title: entry.bookInfo.title,
           author: entry.bookInfo.author ?? "",
           intro: entry.bookInfo.intro ?? "",
-          rating: entry.newRating ?? 0,
+          rating: normalizeRating(entry.newRating),
           ratingCount: entry.newRatingCount ?? 0
         });
       }
@@ -162,6 +163,29 @@ export async function buildCandidates(
     });
 
   const page = ranked.slice(offset * 5, offset * 5 + 5);
+  await Promise.all(
+    page
+      .filter(([bookId]) => {
+        const info = meta.get(bookId)!;
+        return similarSource.has(bookId) && (info.rating <= 0 || info.intro.trim() === "");
+      })
+      .map(async ([bookId]) => {
+        const current = meta.get(bookId)!;
+        try {
+          const detail = await gateway.fetchBookInfo(bookId);
+          meta.set(bookId, {
+            ...current,
+            title: detail.title || current.title,
+            author: detail.author || current.author,
+            intro: current.intro || detail.intro || "",
+            rating: detail.newRating === undefined ? current.rating : normalizeRating(detail.newRating),
+            ratingCount: detail.newRatingCount ?? current.ratingCount
+          });
+        } catch {
+          // 单本详情失败只保留相似接口的基本字段，不拖垮候选页。
+        }
+      })
+  );
   const candidates: Candidate[] = page.map(([bookId]) => {
     const info = meta.get(bookId)!;
     return {
@@ -299,6 +323,10 @@ interface BookMetadata {
   chapterInfo: ChapterInfoResponse;
 }
 
+function normalizeBookInfo(bookInfo: BookInfoResponse): BookInfoResponse {
+  return { ...bookInfo, newRating: normalizeRating(bookInfo.newRating) };
+}
+
 function readBookMetadata(bookId: string): BookMetadata | null {
   const row = db.prepare(`SELECT title, author, meta FROM book_cache WHERE book_id = ?`).get(bookId) as
     | { title: string; author: string | null; meta: string }
@@ -312,14 +340,16 @@ function readBookMetadata(bookId: string): BookMetadata | null {
   }
   const info = metadata.bookInfo;
   if (!info || typeof info.wordCount !== "number" || !Array.isArray(metadata.chapters)) return null;
+  const bookInfo = normalizeBookInfo({ ...info, bookId, title: row.title, author: row.author ?? info.author ?? "" });
   return {
-    bookInfo: { ...info, bookId, title: row.title, author: row.author ?? info.author ?? "" },
+    bookInfo,
     chapterInfo: { bookId, chapters: metadata.chapters }
   };
 }
 
 function writeBookMetadata(bookInfo: BookInfoResponse, chapterInfo: ChapterInfoResponse): void {
-  const existing = db.prepare(`SELECT meta FROM book_cache WHERE book_id = ?`).get(bookInfo.bookId) as { meta: string } | undefined;
+  const normalizedBookInfo = normalizeBookInfo(bookInfo);
+  const existing = db.prepare(`SELECT meta FROM book_cache WHERE book_id = ?`).get(normalizedBookInfo.bookId) as { meta: string } | undefined;
   let previous: BookCacheMetadata = {};
   try {
     if (existing) previous = JSON.parse(existing.meta) as BookCacheMetadata;
@@ -328,8 +358,8 @@ function writeBookMetadata(bookInfo: BookInfoResponse, chapterInfo: ChapterInfoR
   }
   const metadata: BookCacheMetadata = {
     ...previous,
-    category: bookInfo.category ?? previous.category,
-    bookInfo,
+    category: normalizedBookInfo.category ?? previous.category,
+    bookInfo: normalizedBookInfo,
     chapters: chapterInfo.chapters
   };
   const now = Math.floor(Date.now() / 1000);
@@ -338,15 +368,16 @@ function writeBookMetadata(bookInfo: BookInfoResponse, chapterInfo: ChapterInfoR
      VALUES (?, ?, ?, ?, ?)
      ON CONFLICT(book_id) DO UPDATE SET title = excluded.title, author = excluded.author,
        meta = excluded.meta, fetched_at = excluded.fetched_at`
-  ).run(bookInfo.bookId, bookInfo.title, bookInfo.author ?? "", JSON.stringify(metadata), now);
+  ).run(normalizedBookInfo.bookId, normalizedBookInfo.title, normalizedBookInfo.author ?? "", JSON.stringify(metadata), now);
 }
 
 async function loadOrFetchBookMetadata(gateway: GatewayClient, bookId: string): Promise<BookMetadata> {
   const cached = readBookMetadata(bookId);
   if (cached) return cached;
   const [bookInfo, chapterInfo] = await Promise.all([gateway.fetchBookInfo(bookId), gateway.fetchChapterInfo(bookId)]);
-  writeBookMetadata(bookInfo, chapterInfo);
-  return { bookInfo, chapterInfo };
+  const normalizedBookInfo = normalizeBookInfo(bookInfo);
+  writeBookMetadata(normalizedBookInfo, chapterInfo);
+  return { bookInfo: normalizedBookInfo, chapterInfo };
 }
 
 function toRawReviews(response: ReviewListResponse): RawReview[] {
@@ -411,10 +442,14 @@ export async function buildCard(session: Session, bookId: string, intent: Intent
     .prepare(`SELECT words_per_minute, basis FROM speed_baseline WHERE vid = ?`)
     .get(session.vid) as { words_per_minute: number; basis: string } | undefined;
   const wpm = baseline?.words_per_minute ?? 425;
-  const estimatedHours = bookInfo.wordCount > 0 ? bookInfo.wordCount / wpm / 60 : 0;
+  const effectiveWordCount = resolveWordCount(bookInfo.wordCount, chapters.map((chapter) => chapter.wordCount));
+  const wordCountSource: DecisionCard["readingCost"]["wordCountSource"] =
+    bookInfo.wordCount > 0 ? "book_info" : effectiveWordCount > 0 ? "chapters" : "unknown";
+  const estimatedHours = effectiveWordCount > 0 ? effectiveWordCount / wpm / 60 : null;
+  const estimatedHoursForRules = estimatedHours ?? 0;
   const weeklyHours = intent.constraints.weeklyHours ?? DEFAULT_WEEKLY_HOURS;
   const timeBudgetHours = intent.constraints.timeBudgetHours ?? weeklyHours * 3;
-  const weeks = Math.max(1, Math.ceil(estimatedHours / weeklyHours));
+  const weeks = estimatedHours === null ? null : Math.max(1, Math.ceil(estimatedHours / weeklyHours));
 
   // 评论三档 → P1 主题归纳
   const bandData = [
@@ -465,7 +500,7 @@ export async function buildCard(session: Session, bookId: string, intent: Intent
   const gateInput: GateInput = {
     matchScore,
     mismatch,
-    estimatedHours,
+    estimatedHours: estimatedHoursForRules,
     timeBudgetHours,
     duplicationHigh: Boolean(duplicationWith),
     themeNegativeMajor
@@ -474,7 +509,7 @@ export async function buildCard(session: Session, bookId: string, intent: Intent
   let verdict = ruleVerdict(gates, {
     duplicationHigh: gateInput.duplicationHigh,
     themeNegativeMajor,
-    estimatedHours
+    estimatedHours: estimatedHoursForRules
   });
   let llmSource: "llm" | "rules" = "rules";
   if (llmOn) {
@@ -485,7 +520,7 @@ export async function buildCard(session: Session, bookId: string, intent: Intent
         目标: intent.verbatim,
         书名: bookInfo.title,
         匹配分: `${matchScore}/5`,
-        预计时长小时: estimatedHours.toFixed(1),
+        预计时长小时: estimatedHoursForRules.toFixed(1),
         时间预算小时: timeBudgetHours,
         主题级差评: negativeThemes.map((theme) => theme.theme),
         与在读书重复: gateInput.duplicationHigh
@@ -507,7 +542,7 @@ export async function buildCard(session: Session, bookId: string, intent: Intent
   // 置信度：三块证据方向一致性；规则判定（未接 LLM）封顶 medium
   const openQuestions: string[] = [];
   if ((bookInfo.newRatingCount ?? 0) < 100) openQuestions.push("评分人数较少，评论分歧统计的代表性有限");
-  if (bookInfo.wordCount === 0) openQuestions.push("字数信息缺失，预计时长按同类书估算口径待校准");
+  if (effectiveWordCount === 0) openQuestions.push("有效字数缺失，预计时长待校准");
   if (!llmOn && MODE === "real") openQuestions.push("未接入 LLM：评论主题未归纳，判定仅含闸门规则");
   if (mismatch && negativeThemes.length === 0) openQuestions.push("缺少书评样本佐证错配判断");
   let confidence: "high" | "medium" | "low" = "medium";
@@ -548,7 +583,7 @@ export async function buildCard(session: Session, bookId: string, intent: Intent
       : similarRes.booksimilar.books.slice(0, 2).map((entry) => ({
           title: entry.book.bookInfo.title,
           why:
-            estimatedHours > 12
+            estimatedHoursForRules > 12
               ? "同主题但更轻，先读它再决定要不要啃大部头"
               : gateInput.duplicationHigh
                 ? "先读完你在读的同主题书，再考虑这本"
@@ -573,8 +608,8 @@ export async function buildCard(session: Session, bookId: string, intent: Intent
       author: bookInfo.author ?? "",
       category: bookInfo.category ?? "",
       deepLink: bookInfo.deepLink ?? null,
-      wordCount: bookInfo.wordCount,
-      rating: bookInfo.newRating ?? 0,
+      wordCount: effectiveWordCount,
+      rating: normalizeRating(bookInfo.newRating),
       ratingCount: bookInfo.newRatingCount ?? 0
     },
     userGoal: { type: intent.goalType, verbatim: intent.verbatim, constraints: intent.constraints },
@@ -590,17 +625,21 @@ export async function buildCard(session: Session, bookId: string, intent: Intent
         : null
     },
     readingCost: {
-      estimatedHours: Math.round(estimatedHours * 10) / 10,
+      estimatedHours: estimatedHours === null ? null : Math.round(estimatedHours * 10) / 10,
+      wordCountSource,
       speedBasis: baseline?.basis === "own_median" ? "own" : "estimated",
-      calendarEstimate: `按每周 ${weeklyHours} 小时，约 ${weeks} 周${intent.constraints.deadline ? `（你的期限：${intent.constraints.deadline}）` : ""}`,
+      calendarEstimate:
+        estimatedHours === null
+          ? `暂无有效字数，预计时长待校准${intent.constraints.deadline ? `（你的期限：${intent.constraints.deadline}）` : ""}`
+          : `按每周 ${weeklyHours} 小时，约 ${weeks} 周${intent.constraints.deadline ? `（你的期限：${intent.constraints.deadline}）` : ""}`,
       difficulty,
       versionNote
     },
     reviewDivergence: {
       snapshotDate: reviewSnapshotDate,
-      rating: bookInfo.newRating ?? 0,
+      rating: normalizeRating(bookInfo.newRating),
       ratingCount: bookInfo.newRatingCount ?? 0,
-      deepVRecommend: recommendRes.deepVRecommendValue ? `${(recommendRes.deepVRecommendValue / 10).toFixed(1)}%` : null,
+      deepVRecommend: recommendRes.deepVRecommendValue ? `${normalizeRating(recommendRes.deepVRecommendValue).toFixed(1)}%` : null,
       positiveThemes: themeBlocks.recommend.themes,
       neutralThemes: themeBlocks.neutral.themes,
       negativeThemes,

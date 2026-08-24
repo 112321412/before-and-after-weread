@@ -42,7 +42,7 @@ npm run dev
 | `npm run dev:server` | 只起服务端（8787） |
 | `npm run dev:web` | 只起前端（5173） |
 | `npm run build` | server 与 web 的 tsc 全量类型检查 + Vite 产物构建（`web/dist/`） |
-| `npm run check:*` | 运行全部自动检查；包含同步基线、账户/访问控制、决策、书评缓存、认证错误、F2.1 与视觉/F2.2/F2.3 回归 |
+| `npm run check:*` | 运行全部自动检查；包含同步基线、账户/访问控制、决策候选与真实口径 fixture、书评缓存、认证错误、F2.1 回顾列表映射与视觉/F2.2/F2.3 回归 |
 
 ## 目录
 

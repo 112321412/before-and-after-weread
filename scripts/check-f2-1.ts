@@ -70,6 +70,8 @@ try {
 
   const { replaceBookNotes } = await import("../server/src/sync.js");
   const { buildRecall, loadBookMaterials } = await import("../server/src/review/recall.js");
+  const { mapReviewBookRow } = await import("../server/src/review/router.js");
+  const { reviewRouter } = await import("../server/src/review/router.js");
   const { deletePersonalDataAndSession, loadPersonalData } = await import("../server/src/account/router.js");
   const { sessions } = await import("../server/src/sessions.js");
 
@@ -182,6 +184,51 @@ try {
   assert.equal(thoughtEvidence?.context, "第二章原文");
   assert.equal(draft.evidences.some((evidence) => evidence.text.includes("另一用户")), false, "回顾不得串入其他 vid");
   assert.equal(loadBookMaterials("vid-b", "old-book").highlights.length, 1);
+
+  const reviewBook = mapReviewBookRow({
+    book_id: "old-book",
+    title: "旧结构书",
+    author: "旧作者",
+    finished: 1,
+    abandoned: 0,
+    progress: 99,
+    read_minutes: 61,
+    last_read_at: "2026-02-01",
+    finished_at: "2026-02-02",
+    highlights: 2,
+    thoughts: 2
+  });
+  assert.equal(reviewBook.bookId, "old-book", "SQLite snake_case 行必须映射为契约 bookId");
+  assert.equal(reviewBook.readMinutes, 61);
+  assert.equal(reviewBook.lastReadAt, "2026-02-01");
+  assert.equal(reviewBook.finishedAt, "2026-02-02");
+  assert.equal("book_id" in reviewBook, false, "回顾列表不得泄漏 snake_case 字段");
+  assert.equal((await buildRecall(sessionA, reviewBook.bookId)).bookId, "old-book", "列表 bookId 应可直接用于单书回顾");
+
+  const express = (await import("express")).default;
+  const reviewApp = express();
+  reviewApp.use(express.json());
+  reviewApp.use(reviewRouter);
+  sessions.set(sessionA.sid, sessionA);
+  const reviewServer = reviewApp.listen(0);
+  try {
+    const address = reviewServer.address();
+    if (!address || typeof address === "string") throw new Error("review route test server did not bind");
+    const reviewBase = `http://127.0.0.1:${address.port}`;
+    const listResponse = await fetch(`${reviewBase}/api/review/books`, { headers: { "x-sid": sessionA.sid } });
+    assert.equal(listResponse.status, 200);
+    const listed = (await listResponse.json()) as { books: { bookId: string }[] };
+    assert.equal(listed.books[0]?.bookId, "old-book", "GET 回顾列表必须返回 camelCase bookId");
+    const recallResponse = await fetch(`${reviewBase}/api/review/book/${listed.books[0]?.bookId}`, {
+      method: "POST",
+      headers: { "x-sid": sessionA.sid, "content-type": "application/json" },
+      body: "{}"
+    });
+    assert.equal(recallResponse.status, 200, "GET 列表返回的 bookId 必须可用于 POST 单书回顾");
+    assert.equal(((await recallResponse.json()) as { bookId: string }).bookId, "old-book");
+  } finally {
+    await new Promise<void>((resolve) => reviewServer.close(() => resolve()));
+  }
 
   db.prepare(`INSERT INTO user_settings (vid, spoiler_level, updated_at) VALUES (?, ?, ?)`).run("vid-a", "light", 1);
   db.prepare(`INSERT INTO speed_baseline (vid, words_per_minute, basis, updated_at) VALUES (?, ?, ?, ?)`).run("vid-a", 400, "estimated", 1);

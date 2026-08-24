@@ -379,7 +379,7 @@ function DecisionCardView({ card, onActed }: { card: DecisionCard; onActed: () =
         <div className="dc-trio">
           <div>
             <span className="dc-trio-label">预计时长</span>
-            <strong>{card.readingCost.estimatedHours} 小时</strong>
+            <strong>{estimatedHoursLabel(card.readingCost.estimatedHours)}</strong>
             <span className="dc-trio-sub">{card.readingCost.calendarEstimate}</span>
           </div>
           <div>
@@ -445,8 +445,10 @@ function DecisionCardView({ card, onActed }: { card: DecisionCard; onActed: () =
         <summary>阅读成本</summary>
         <div className="dc-body">
           <p>
-            {card.readingCost.estimatedHours} 小时（{card.readingCost.speedBasis === "own" ? "按你自己的速度" : "按群体均值估算"}） · {card.readingCost.calendarEstimate}
+            {estimatedHoursLabel(card.readingCost.estimatedHours)}（{card.readingCost.speedBasis === "own" ? "按你自己的速度" : "按群体均值估算"}） · {card.readingCost.calendarEstimate}
           </p>
+          {card.readingCost.wordCountSource === "chapters" && <p className="dc-meta">书目信息缺字数，已按章节字数回退。</p>}
+          {card.readingCost.wordCountSource === "unknown" && <p className="dc-warning">暂无有效字数，预计时长待校准。</p>}
           <p>{card.readingCost.difficulty}</p>
           {card.readingCost.versionNote && <p className="dc-warning">{card.readingCost.versionNote}</p>}
         </div>
@@ -582,7 +584,7 @@ function CompareRow({ cards }: { cards: DecisionCard[] }) {
           {cards.map((card) => (
             <tr key={card.cardId}>
               <td>{card.book.title}</td>
-              <td>{card.readingCost.estimatedHours}h</td>
+              <td>{estimatedHoursTableLabel(card.readingCost.estimatedHours)}</td>
               <td>{card.readingCost.difficulty.startsWith("有门槛") ? "较高" : card.readingCost.difficulty.startsWith("偏学理") ? "学理" : "适中"}</td>
               <td>
                 {card.personalLink.relations.some((relation) => relation.type === "重复") || card.gatesHit.some((gate) => gate.includes("重复"))
@@ -600,6 +602,14 @@ function CompareRow({ cards }: { cards: DecisionCard[] }) {
       </table>
     </div>
   );
+}
+
+function estimatedHoursLabel(value: number | null): string {
+  return value === null ? "待校准" : `${value} 小时`;
+}
+
+function estimatedHoursTableLabel(value: number | null): string {
+  return value === null ? "待校准" : `${value}h`;
 }
 
 function confidenceLabel(confidence: string): string {

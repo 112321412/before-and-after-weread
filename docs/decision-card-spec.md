@@ -66,7 +66,8 @@
 
   // ③ 阅读成本（全个性化）
   "reading_cost": {
-    "estimated_hours": 6.5,                   // wordCount ÷ 个人速度
+    "estimated_hours": 6.5,                   // wordCount ÷ 个人速度；无有效字数时为 null
+    "word_count_source": "book_info | chapters | unknown", // 章节回退或待校准时明确标注
     "speed_basis": "based_on_own | estimated",
     "calendar_estimate": "按你每周3小时，约2周",
     "difficulty": "门槛描述 + 前置知识要求（差评+目录推断，挂证据）",

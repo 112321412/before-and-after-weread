@@ -171,7 +171,8 @@ export interface DecisionCard {
     mismatchWarning: string | null;
   };
   readingCost: {
-    estimatedHours: number;
+    estimatedHours: number | null;
+    wordCountSource: "book_info" | "chapters" | "unknown";
     speedBasis: "own" | "estimated";
     calendarEstimate: string;
     difficulty: string;
