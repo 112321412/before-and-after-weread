@@ -365,6 +365,9 @@ function DecisionCardView({ card }: { card: DecisionCard; onActed: () => void })
       <details className="dc-block">
         <summary>评论分歧 · {card.book.rating}%（{formatCount(card.book.ratingCount)} 人评分）</summary>
         <div className="dc-body">
+          {card.reviewDivergence.snapshotDate && (
+            <p className="dc-meta">书评快照于 {formatSnapshotDate(card.reviewDivergence.snapshotDate)}</p>
+          )}
           {card.reviewDivergence.deepVRecommend && <p className="dc-meta">资深会员推荐率 {card.reviewDivergence.deepVRecommend}</p>}
           <ThemeList label="好评主题" themes={card.reviewDivergence.positiveThemes} />
           <ThemeList label="差评主题" themes={card.reviewDivergence.negativeThemes} negative />
@@ -560,6 +563,11 @@ function confidenceLabel(confidence: string): string {
   if (confidence === "high") return "高";
   if (confidence === "medium") return "中";
   return "低（关键证据不足，谨慎参考）";
+}
+
+function formatSnapshotDate(value: string): string {
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? value : date.toLocaleDateString("zh-CN");
 }
 
 function formatCount(count: number): string {

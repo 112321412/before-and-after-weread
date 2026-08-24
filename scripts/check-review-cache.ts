@@ -10,7 +10,7 @@ process.env.WEREAD_DATA_DIR = dataDir;
 
 try {
   const { db } = await import("../server/src/db.js");
-  const { fetchReviewListCached } = await import("../server/src/decide/engine.js");
+  const { fetchReviewListCached, fetchReviewListCachedWithDate } = await import("../server/src/decide/engine.js");
   const response: ReviewListResponse = {
     reviewsCnt: 1,
     reviewsHasMore: 0,
@@ -50,6 +50,8 @@ try {
     .get("cache-check-book", "recommend") as { reviews: string; snapshot_date: string };
   assert.equal(JSON.parse(stored.reviews).reviewsCnt, 2);
   assert.ok(Date.now() - Date.parse(stored.snapshot_date) < 5000, "刷新后应更新快照时间");
+  const dated = await fetchReviewListCachedWithDate(gateway, "cache-check-book", "recommend");
+  assert.equal(dated.snapshotDate, stored.snapshot_date, "缓存读取应带回实际快照日期");
   db.close();
   console.log("review cache checks passed");
 } finally {

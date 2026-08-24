@@ -44,6 +44,23 @@
   font-size: 15px;
 }
 
+.shelf-sync-warning {
+  position: absolute;
+  top: 92px;
+  left: 50%;
+  z-index: 8;
+  width: min(680px, calc(100vw - 40px));
+  transform: translateX(-50%);
+  padding: 10px 14px;
+  border: 1px solid color-mix(in srgb, #e8b29e 45%, transparent);
+  border-radius: 7px;
+  color: #e8b29e;
+  background: color-mix(in srgb, var(--paper-deep) 78%, transparent);
+  font-size: 13px;
+  line-height: 1.6;
+  text-align: center;
+}
+
 .shelf-error button {
   padding: 8px 20px;
   font-size: 13.5px;

@@ -16,6 +16,7 @@ export function ShelfPage({ onSyncStateChange }: ShelfPageProps) {
   const [stats, setStats] = useState<StatsResponse | null>(null);
   const [focusIndex, setFocusIndex] = useState(0);
   const [error, setError] = useState("");
+  const [syncNotice, setSyncNotice] = useState("");
   const mountRef = useRef<HTMLDivElement>(null);
   const sceneRef = useRef<ShelfScene | null>(null);
   const use3D = useMemo(() => webglAvailable() && !prefersReducedMotion(), []);
@@ -23,12 +24,54 @@ export function ShelfPage({ onSyncStateChange }: ShelfPageProps) {
   useEffect(() => {
     onSyncStateChange("syncing", "正在同步书架");
     let cancelled = false;
+    const applySnapshot = (shelf: Awaited<ReturnType<typeof api.shelf>>, statsData: StatsResponse) => {
+      if (cancelled) return;
+      setBooks(shelf.books);
+      setStats(statsData);
+      if (shelf.sync?.phase === "error") {
+        const message = shelf.sync.error ?? "真实数据同步失败，可更换 Key 重试";
+        setSyncNotice(message);
+        onSyncStateChange("error", message);
+      } else if (shelf.mode === "real" && shelf.sync?.phase !== "done") {
+        setSyncNotice("");
+        onSyncStateChange("syncing", "正在同步真实数据");
+      } else {
+        setSyncNotice("");
+        onSyncStateChange("ok", shelf.mode === "mock" ? "演示书架已同步" : "真实数据已同步");
+      }
+    };
+    const pollInitialSync = async () => {
+      try {
+        for (;;) {
+          await new Promise((resolve) => window.setTimeout(resolve, 500));
+          const progress = await api.syncProgress();
+          if (cancelled) return;
+          if (progress.phase === "error") {
+            const message = progress.error ?? "真实数据同步失败，可更换 Key 重试";
+            setSyncNotice(message);
+            onSyncStateChange("error", message);
+            return;
+          }
+          if (progress.phase === "done") {
+            const [freshShelf, freshStats] = await Promise.all([api.shelf(), api.stats()]);
+            applySnapshot(freshShelf, freshStats);
+            return;
+          }
+          onSyncStateChange("syncing", `正在同步真实数据 ${Math.round(progress.percent * 100)}%`);
+        }
+      } catch (err) {
+        if (cancelled) return;
+        const message = err instanceof Error ? err.message : "真实数据同步失败，可更换 Key 重试";
+        setSyncNotice(message);
+        onSyncStateChange("error", message);
+      }
+    };
     Promise.all([api.shelf(), api.stats()])
       .then(([shelf, statsData]) => {
-        if (cancelled) return;
-        setBooks(shelf.books);
-        setStats(statsData);
-        onSyncStateChange("ok", shelf.mode === "mock" ? "演示书架已同步" : "书架已同步");
+        applySnapshot(shelf, statsData);
+        if (shelf.mode === "real" && shelf.sync && shelf.sync.phase !== "done" && shelf.sync.phase !== "error") {
+          void pollInitialSync();
+        }
       })
       .catch((err) => {
         if (cancelled) return;
@@ -76,6 +119,11 @@ export function ShelfPage({ onSyncStateChange }: ShelfPageProps) {
   return (
     <>
       <section className="shelf-hero" aria-label="书架">
+        {syncNotice && (
+          <div className="shelf-sync-warning" role="status">
+            {syncNotice} {books.length > 0 ? "当前显示已有本地快照。" : "暂无可用的本地书架快照。"}
+          </div>
+        )}
         {error ? (
           <div className="shelf-error">
             <p>{error}</p>
@@ -83,7 +131,7 @@ export function ShelfPage({ onSyncStateChange }: ShelfPageProps) {
               重试
             </button>
           </div>
-        ) : use3D ? (
+        ) : use3D && books.length > 0 ? (
           <>
             <div className="shelf-canvas-mount" ref={mountRef} aria-label="三维书架：滚轮或左右箭头切换焦点书" />
             <div className="hero-bottom-fade" aria-hidden="true" />
@@ -96,7 +144,7 @@ export function ShelfPage({ onSyncStateChange }: ShelfPageProps) {
             onActivate={() => toast("书籍详情页 · 本期预留")}
           />
         ) : (
-          <div className="shelf-loading">正在取出你的书架…</div>
+          <div className="shelf-loading">{syncNotice ? "暂无可用的本地书架快照。" : "正在取出你的书架…"}</div>
         )}
 
         <div className="shelf-info">

@@ -9,6 +9,7 @@
     "dev:web": "node scripts/free-port.js 5173 && vite serve web --port 5173",
     "build": "tsc -p server --noEmit && tsc -p web --noEmit && vite build web",
     "check:reading": "tsx scripts/check-reading-baseline.ts",
+    "check:account": "tsx scripts/check-account-data.ts",
     "check:key": "tsx scripts/check-key-guard.ts",
     "check:review-cache": "tsx scripts/check-review-cache.ts",
     "check:gateway-auth": "tsx scripts/check-gateway-auth-error.ts",

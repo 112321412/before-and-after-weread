@@ -110,6 +110,7 @@ export interface DecisionCard {
     versionNote: string | null;
   };
   reviewDivergence: {
+    snapshotDate: string | null;
     rating: number;
     ratingCount: number;
     deepVRecommend: string | null;

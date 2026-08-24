@@ -6,7 +6,9 @@ import type {
   RecallDraft,
   ReviewBookItem,
   SessionStatus,
+  SettingsResponse,
   ShelfResponse,
+  SpoilerLevel,
   StatsResponse,
   SyncProgress,
   ThemeResult
@@ -51,6 +53,12 @@ export const api = {
     request<{ sid: string; mode: string }>("/api/session", { method: "POST", body: JSON.stringify({ key: key.trim() }) }),
   destroySession: () => request<{ ok: boolean }>("/api/session", { method: "DELETE" }),
   syncProgress: () => request<SyncProgress>("/api/sync/progress"),
+  settings: () => request<SettingsResponse>("/api/settings"),
+  updateSettings: (spoilerLevel: SpoilerLevel) =>
+    request<{ spoilerLevel: SpoilerLevel }>("/api/settings", {
+      method: "PUT",
+      body: JSON.stringify({ spoilerLevel })
+    }),
   shelf: () => request<ShelfResponse>("/api/shelf"),
   stats: () => request<StatsResponse>("/api/stats"),
   decideIntent: (input: string) =>
@@ -62,6 +70,24 @@ export const api = {
   postDecision: (payload: { cardId: string; action: string; trigger?: string; reason?: string }) =>
     request<{ ok: boolean }>("/api/decision", { method: "POST", body: JSON.stringify(payload) }),
   decisionHistory: () => request<{ decisions: DecisionHistoryItem[] }>("/api/decision"),
+  exportData: async (): Promise<void> => {
+    const sid = getSid();
+    const res = await fetch("/api/data/export", {
+      headers: { ...(sid ? { "x-sid": sid } : {}) }
+    });
+    if (!res.ok) {
+      const body = (await res.json().catch(() => ({}))) as { error?: string };
+      throw new Error(body.error || "导出失败");
+    }
+    const blob = await res.blob();
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = "weread-personal-data.json";
+    link.click();
+    URL.revokeObjectURL(url);
+  },
+  deleteData: () => request<{ ok: boolean }>("/api/data", { method: "DELETE" }),
   reviewBooks: () => request<{ books: ReviewBookItem[] }>("/api/review/books"),
   reviewBook: (bookId: string) =>
     request<RecallDraft>(`/api/review/book/${bookId}`, { method: "POST", body: JSON.stringify({}) }),

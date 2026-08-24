@@ -250,28 +250,42 @@ interface ReviewCacheRow {
   snapshot_date: string;
 }
 
-export async function fetchReviewListCached(
+export interface CachedReviewList {
+  response: ReviewListResponse;
+  snapshotDate: string;
+}
+
+export async function fetchReviewListCachedWithDate(
   gateway: GatewayClient,
   bookId: string,
   band: ReviewBand
-): Promise<ReviewListResponse> {
+): Promise<CachedReviewList> {
   const row = db
     .prepare(`SELECT reviews, snapshot_date FROM review_cache WHERE book_id = ? AND band = ?`)
     .get(bookId, band) as ReviewCacheRow | undefined;
   const age = row ? Date.now() - Date.parse(row.snapshot_date) : Number.POSITIVE_INFINITY;
   if (row && Number.isFinite(age) && age < REVIEW_CACHE_TTL_MS) {
-    return JSON.parse(row.reviews) as ReviewListResponse;
+    return { response: JSON.parse(row.reviews) as ReviewListResponse, snapshotDate: row.snapshot_date };
   }
 
   const response = await gateway.fetchReviewList(bookId, REVIEW_LIST_TYPES[band]);
+  const snapshotDate = new Date().toISOString();
   db.prepare(
     `INSERT INTO review_cache (book_id, band, reviews, snapshot_date)
      VALUES (?, ?, ?, ?)
      ON CONFLICT(book_id, band) DO UPDATE SET
-       reviews = excluded.reviews,
-       snapshot_date = excluded.snapshot_date`
-  ).run(bookId, band, JSON.stringify(response), new Date().toISOString());
-  return response;
+        reviews = excluded.reviews,
+        snapshot_date = excluded.snapshot_date`
+  ).run(bookId, band, JSON.stringify(response), snapshotDate);
+  return { response, snapshotDate };
+}
+
+export async function fetchReviewListCached(
+  gateway: GatewayClient,
+  bookId: string,
+  band: ReviewBand
+): Promise<ReviewListResponse> {
+  return (await fetchReviewListCachedWithDate(gateway, bookId, band)).response;
 }
 
 function toRawReviews(response: ReviewListResponse): RawReview[] {
@@ -307,15 +321,24 @@ async function llmThemeCandidates(bandLabel: string, reviews: RawReview[]): Prom
 
 export async function buildCard(session: Session, bookId: string, intent: IntentResult): Promise<DecisionCard> {
   const gateway = decideGateway(session);
-  const [bookInfo, chapterInfo, bestBookmarks, recommendRes, negativeRes, neutralRes, similarRes] = await Promise.all([
+  const [bookInfo, chapterInfo, bestBookmarks, recommendCached, negativeCached, neutralCached, similarRes] = await Promise.all([
     gateway.fetchBookInfo(bookId),
     gateway.fetchChapterInfo(bookId),
     gateway.fetchBestBookmarks(bookId),
-    fetchReviewListCached(gateway, bookId, "recommend"),
-    fetchReviewListCached(gateway, bookId, "negative"),
-    fetchReviewListCached(gateway, bookId, "neutral"),
+    fetchReviewListCachedWithDate(gateway, bookId, "recommend"),
+    fetchReviewListCachedWithDate(gateway, bookId, "negative"),
+    fetchReviewListCachedWithDate(gateway, bookId, "neutral"),
     gateway.fetchSimilar(bookId)
   ]);
+  const recommendRes = recommendCached.response;
+  const negativeRes = negativeCached.response;
+  const neutralRes = neutralCached.response;
+  const reviewSnapshotDates = [recommendCached.snapshotDate, negativeCached.snapshotDate, neutralCached.snapshotDate]
+    .map((value) => Date.parse(value))
+    .filter((value) => Number.isFinite(value));
+  const reviewSnapshotDate = reviewSnapshotDates.length > 0
+    ? new Date(Math.min(...reviewSnapshotDates)).toISOString()
+    : null;
 
   const chapters = chapterInfo.chapters;
   const style = detectStyle(chapters.map((chapter) => chapter.title));
@@ -433,18 +456,28 @@ export async function buildCard(session: Session, bookId: string, intent: Intent
   if (llmSource === "rules" && confidence === "high") confidence = "medium";
 
   // F1.5 剧透控制
-  const spoilerLevel = (db.prepare(`SELECT spoiler_level FROM user_settings WHERE vid = ?`).get(session.vid) as { spoiler_level?: string } | undefined)?.spoiler_level ?? "none";
+  const storedSpoilerLevel = (db.prepare(`SELECT spoiler_level FROM user_settings WHERE vid = ?`).get(session.vid) as { spoiler_level?: string } | undefined)?.spoiler_level;
+  const spoilerLevel = storedSpoilerLevel === "light" || storedSpoilerLevel === "full" ? storedSpoilerLevel : "none";
   const isNarrative = /小说|文学/.test(bookInfo.category ?? "") || style === "narrative";
   const chapterCount = Math.max(1, chapters.length);
   const contentSample = isNarrative
     ? { bookmarksHidden: true, note: "小说/文学类默认无剧透档：内容样本仅保留问题与形式描述，热门划线不展示", bookmarks: [] }
     : {
         bookmarksHidden: false,
-        note: spoilerLevel === "none" ? "无剧透档：结论型划线默认折叠" : null,
+        note:
+          spoilerLevel === "none"
+            ? "无剧透档：结论型划线默认折叠"
+            : spoilerLevel === "light"
+              ? "轻剧透档：结论型划线默认折叠"
+              : "全剧透档：热门划线全部展示",
         bookmarks: bestBookmarks.items.map((item) => {
           const chapterIdx = chapterInfo.chapters.find((chapter) => chapter.chapterUid === item.chapterUid)?.chapterIdx ?? 0;
           const kind = chapterIdx >= chapterCount * 0.7 ? "结论" : "金句";
-          return { text: item.markText, kind: kind as "金句" | "结论", totalCount: item.totalCount };
+          return {
+            text: item.markText,
+            kind: spoilerLevel === "full" ? "金句" : (kind as "金句" | "结论"),
+            totalCount: item.totalCount
+          };
         })
       };
 
@@ -504,6 +537,7 @@ export async function buildCard(session: Session, bookId: string, intent: Intent
       versionNote
     },
     reviewDivergence: {
+      snapshotDate: reviewSnapshotDate,
       rating: bookInfo.newRating ?? 0,
       ratingCount: bookInfo.newRatingCount ?? 0,
       deepVRecommend: recommendRes.deepVRecommendValue ? `${(recommendRes.deepVRecommendValue / 10).toFixed(1)}%` : null,

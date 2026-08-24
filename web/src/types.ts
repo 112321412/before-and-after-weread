@@ -35,6 +35,7 @@ export interface ShelfBook {
 export interface ShelfResponse {
   mode: string;
   books: ShelfBook[];
+  sync?: SyncProgress;
 }
 
 export interface StatsResponse {
@@ -56,6 +57,13 @@ export interface SyncProgress {
   total: number;
   percent: number;
   error?: string;
+}
+
+export type SpoilerLevel = "none" | "light" | "full";
+
+export interface SettingsResponse {
+  spoilerLevel: SpoilerLevel;
+  sync: SyncProgress;
 }
 
 // ---- 选书决策（与 server/src/decide/types.ts 对齐）----
@@ -165,6 +173,7 @@ export interface DecisionCard {
     versionNote: string | null;
   };
   reviewDivergence: {
+    snapshotDate: string | null;
     rating: number;
     ratingCount: number;
     deepVRecommend: string | null;
@@ -277,6 +286,7 @@ export interface SessionStatus {
   authenticated: boolean;
   mode: string;
   vid?: string;
+  createdAt?: number;
 }
 
 export function bookStatusLabel(book: ShelfBook): string {

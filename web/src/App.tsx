@@ -40,7 +40,13 @@ export function App() {
   if (phase === "setup") {
     return (
       <>
-        <SetupPage mode={mode} onReady={() => setPhase("ready")} />
+        <SetupPage
+          mode={mode}
+          onReady={() => {
+            navigate("/shelf");
+            setPhase("ready");
+          }}
+        />
         <ToastHost />
       </>
     );
@@ -55,7 +61,12 @@ export function App() {
         ) : route === "/review" ? (
           <ReviewPage />
         ) : route === "/settings" ? (
-          <SettingsPage onExit={() => setPhase("setup")} />
+          <SettingsPage
+            onExit={() => {
+              navigate("/shelf");
+              setPhase("setup");
+            }}
+          />
         ) : (
           <ShelfPage onSyncStateChange={handleSyncStateChange} />
         )}

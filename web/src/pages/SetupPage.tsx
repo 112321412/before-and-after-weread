@@ -1,6 +1,5 @@
 import { useState } from "react";
 import { api, isWeReadKey, setSid } from "../api";
-import type { SyncPhase } from "../types";
 
 interface SetupPageProps {
   mode: string; // mock | real
@@ -14,18 +13,6 @@ const MOCK_STAGES = [
   { until: 0.92, label: "正在提取封面主色" },
   { until: 1, label: "完成" }
 ];
-
-// real 模式阶段文案，对接 GET /api/sync/progress 的 phase
-const REAL_STAGE_LABELS: Record<SyncPhase, string> = {
-  notebooks: "正在拉取笔记本概览",
-  shelf: "正在同步书架",
-  notes: "正在同步划线与想法",
-  covers: "正在处理封面主色",
-  readdata: "正在汇总阅读数据",
-  baseline: "正在计算阅读速度基线",
-  done: "完成",
-  error: "同步失败"
-};
 
 export function SetupPage({ mode, onReady }: SetupPageProps) {
   const [key, setKey] = useState("");
@@ -48,7 +35,9 @@ export function SetupPage({ mode, onReady }: SetupPageProps) {
       const { sid, mode: sessionMode } = await api.createSession(mode === "real" ? normalizedKey : "");
       setSid(sid);
       if (sessionMode === "real") {
-        await pollSyncProgress();
+        // 进入网站与上游同步解耦；同步状态在书架/设置页展示。
+        onReady();
+        return;
       } else {
         await animateMockProgress();
       }
@@ -56,17 +45,6 @@ export function SetupPage({ mode, onReady }: SetupPageProps) {
     } catch (err) {
       setError(err instanceof Error ? err.message : "接入失败");
       setBusy(false);
-    }
-  }
-
-  async function pollSyncProgress(): Promise<void> {
-    for (;;) {
-      const state = await api.syncProgress();
-      setProgress(state.percent);
-      setStageLabel(REAL_STAGE_LABELS[state.phase]);
-      if (state.phase === "done") return;
-      if (state.phase === "error") throw new Error(state.error || "同步失败，请检查 Key 后重试");
-      await new Promise((resolve) => window.setTimeout(resolve, 400));
     }
   }
 
@@ -140,7 +118,7 @@ export function SetupPage({ mode, onReady }: SetupPageProps) {
             )}
             <p className="setup-note">
               Key 仅保存在服务端会话内存中，不落盘、不写日志。真实模式需要在启动服务端时设置
-              WEREAD_MODE=real；接入后会全量同步书架、划线与想法（进度条显示真实进度）。
+              WEREAD_MODE=real；接入后会在站内同步书架、划线与想法，并显示真实同步状态。
             </p>
             {error && <p className="setup-error">{error}</p>}
           </>

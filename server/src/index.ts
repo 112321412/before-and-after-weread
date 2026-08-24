@@ -4,11 +4,12 @@ import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { COVER_CACHE_DIR, db, seedMockIfEmpty } from "./db.js";
 import { createGateway, GatewayHttpError } from "./gateway.js";
-import { isWeReadKey } from "./key.js";
+import { accountVidFromKey, isWeReadKey } from "./key.js";
 import { hashSeed, paletteFromTitle, type Palette } from "./palette.js";
 import {
   cacheShelfFromGateway,
   incrementalSyncNotes,
+  markSyncError,
   processRemoteCover,
   runFullSync,
   syncStates,
@@ -17,6 +18,7 @@ import {
 } from "./sync.js";
 import { requireSession, sessions, type AuthedRequest } from "./sessions.js";
 import { reviewRouter } from "./review/router.js";
+import { accountRouter } from "./account/router.js";
 import { MOCK_BOOKS, MOCK_VID, mockWeeklyMinutes } from "./mock/data.js";
 import { svgCover } from "./mock/cover.js";
 import {
@@ -30,7 +32,6 @@ import {
 import type { IntentResult } from "./decide/types.js";
 
 const MODE = process.env.WEREAD_MODE === "real" ? "real" : "mock";
-const REAL_VID = "gateway-user";
 const PORT = 8787;
 
 // 书架统一载荷：mock 与 real 落库后走完全相同的读取路径，UI/3D 层不感知模式差异
@@ -57,6 +58,7 @@ interface ShelfBook {
 const app = express();
 app.use(express.json());
 app.use(reviewRouter);
+app.use(accountRouter);
 
 if (MODE === "mock") seedMockIfEmpty();
 
@@ -70,12 +72,11 @@ app.post("/api/session", async (req: Request, res: Response, next: NextFunction)
         res.status(400).json({ error: "请输入微信读书 API Key" });
         return;
       }
-      // 验证 key（拉笔记本第一页），通过即建会话；全量同步在后台跑，进度走 /api/sync/progress
+      // 先建内存会话再后台验证/同步；上游失败只记入 sync state，不把用户踢回 Key 门。
       const gateway = createGateway(key);
-      const firstPage = await gateway.fetchNotebooks();
-      const session: Session = { sid: randomUUID(), vid: REAL_VID, gateway, createdAt: Date.now() };
+      const session: Session = { sid: randomUUID(), vid: accountVidFromKey(key), gateway, createdAt: Date.now() };
       sessions.set(session.sid, session);
-      void runFullSync(session.sid, session, firstPage);
+      void runFullSync(session.sid, session);
       res.json({ sid: session.sid, mode: MODE });
     } else {
       const session: Session = { sid: randomUUID(), vid: MOCK_VID, gateway: null, createdAt: Date.now() };
@@ -93,7 +94,7 @@ app.get("/api/session", (req: Request, res: Response) => {
     res.json({ authenticated: false, mode: MODE });
     return;
   }
-  res.json({ authenticated: true, mode: MODE, vid: session.vid, createdAt: session.createdAt });
+  res.json({ authenticated: true, mode: MODE, createdAt: session.createdAt });
 });
 
 app.delete("/api/session", (req: Request, res: Response) => {
@@ -116,11 +117,19 @@ app.get("/api/shelf", requireSession, async (req: Request, res: Response, next: 
   try {
     const session = (req as AuthedRequest).session;
     if (session.gateway) {
-      // F3.2 增量同步：书架轻量刷新 + 笔记概览 sort 对比，只重拉有变化的书
-      cacheShelfFromGateway(session.vid, await session.gateway.fetchShelf());
-      await incrementalSyncNotes(session);
+      const state = syncStates.get(session.sid);
+      if (!state || state.phase === "done" || state.phase === "error") {
+        // F3.2 增量同步：首次全量同步进行中时只读本地快照，避免并发请求上游。
+        try {
+          cacheShelfFromGateway(session.vid, await session.gateway.fetchShelf());
+          await incrementalSyncNotes(session);
+        } catch {
+          // 上游失败时仍返回已有本地快照；失败状态由同步进度与设置页明确展示。
+          markSyncError(session.sid);
+        }
+      }
     }
-    res.json({ mode: MODE, books: loadShelf(session.vid) });
+    res.json({ mode: MODE, books: loadShelf(session.vid), sync: syncStates.get(session.sid) });
   } catch (err) {
     next(err);
   }

@@ -35,6 +35,7 @@ const PHASE_WEIGHTS: { phase: SyncPhase; weight: number }[] = [
 ];
 
 export const syncStates = new Map<string, SyncState>();
+export const SYNC_ERROR_MESSAGE = "真实数据同步失败，可更换 Key 重试";
 
 function updateState(sid: string, phase: SyncPhase, current: number, total: number): void {
   if (phase === "done") {
@@ -53,15 +54,19 @@ function updateState(sid: string, phase: SyncPhase, current: number, total: numb
   });
 }
 
-function errorState(sid: string, message: string): void {
+function errorState(sid: string): void {
   const previous = syncStates.get(sid);
   syncStates.set(sid, {
     phase: "error",
     current: 0,
     total: 0,
     percent: previous?.percent ?? 0,
-    error: message
+    error: SYNC_ERROR_MESSAGE
   });
+}
+
+export function markSyncError(sid: string): void {
+  errorState(sid);
 }
 
 // ---- 并发原语 ----
@@ -358,8 +363,8 @@ export async function runFullSync(sid: string, session: Session, seedPage?: Note
     await syncReadStats(sid, gateway, session.vid);
     await syncBaseline(sid, gateway, session.vid);
     updateState(sid, "done", 1, 1);
-  } catch (err) {
-    errorState(sid, err instanceof Error ? err.message : "同步失败");
+  } catch {
+    errorState(sid);
   }
 }
 
