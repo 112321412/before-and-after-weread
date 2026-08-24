@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { api, ACCESS_REQUIRED_EVENT, clearAccessToken, isAccessErrorCode } from "./api";
+import { api, ACCESS_REQUIRED_EVENT, clearAccessToken, destroySessionAndClearSid, isAccessErrorCode } from "./api";
 import { useHashRoute } from "./router";
 import { TopNav, type SyncState } from "./components/TopNav";
 import { ToastHost } from "./components/Toast";
@@ -60,6 +60,13 @@ export function App() {
     setSyncNote(note);
   }, []);
 
+  const handleChangeKey = useCallback(() => {
+    void destroySessionAndClearSid().finally(() => {
+      navigate("/shelf");
+      setPhase("setup");
+    });
+  }, [navigate]);
+
   if (phase === "checking") {
     return <div className="app-splash" />;
   }
@@ -117,7 +124,7 @@ export function App() {
             }}
           />
         ) : (
-          <ShelfPage onSyncStateChange={handleSyncStateChange} />
+          <ShelfPage onSyncStateChange={handleSyncStateChange} onChangeKey={handleChangeKey} />
         )}
       </main>
       <ToastHost />

@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { api, clearSid } from "../api";
+import { api, clearSid, destroySessionAndClearSid } from "../api";
 import { toast } from "../components/Toast";
 import type { SessionStatus, SettingsResponse, SpoilerLevel, SyncProgress } from "../types";
 
@@ -75,9 +75,8 @@ export function SettingsPage({ onExit }: SettingsPageProps) {
 
   async function exitSession() {
     try {
-      await api.destroySession();
+      await destroySessionAndClearSid();
     } finally {
-      clearSid();
       onExit();
     }
   }

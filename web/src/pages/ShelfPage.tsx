@@ -10,9 +10,10 @@ import type { SyncState } from "../components/TopNav";
 
 interface ShelfPageProps {
   onSyncStateChange: (state: SyncState, note: string) => void;
+  onChangeKey: () => void;
 }
 
-export function ShelfPage({ onSyncStateChange }: ShelfPageProps) {
+export function ShelfPage({ onSyncStateChange, onChangeKey }: ShelfPageProps) {
   const [books, setBooks] = useState<ShelfBook[]>([]);
   const [stats, setStats] = useState<StatsResponse | null>(null);
   const [focusIndex, setFocusIndex] = useState(0);
@@ -190,6 +191,7 @@ export function ShelfPage({ onSyncStateChange }: ShelfPageProps) {
             sync={sync}
             message={error || syncNotice}
             onRetry={() => window.location.reload()}
+            onChangeKey={onChangeKey}
           />
         )}
 
@@ -230,11 +232,13 @@ export function ShelfPage({ onSyncStateChange }: ShelfPageProps) {
 function SyncStatePanel({
   sync,
   message,
-  onRetry
+  onRetry,
+  onChangeKey
 }: {
   sync: SyncProgress | null;
   message: string;
   onRetry: () => void;
+  onChangeKey: () => void;
 }) {
   const failed = sync?.phase === "error";
   return (
@@ -242,9 +246,14 @@ function SyncStatePanel({
       <SyncOrbit sync={sync} />
       {message && <p className={`shelf-sync-message${failed ? " is-error" : ""}`}>{message}</p>}
       {failed && (
-        <button type="button" className="shelf-retry" onClick={onRetry}>
-          重试或更换 Key
-        </button>
+        <div className="shelf-sync-actions">
+          <button type="button" className="shelf-retry" onClick={onRetry}>
+            重试同步
+          </button>
+          <button type="button" className="shelf-change-key" onClick={onChangeKey}>
+            更换 Key
+          </button>
+        </div>
       )}
     </div>
   );

@@ -176,3 +176,12 @@ export const api = {
     URL.revokeObjectURL(url);
   }
 };
+
+// 退出与更换 Key 共用同一条会话清理路径：服务端失效会话，客户端再清掉 sid。
+export async function destroySessionAndClearSid(): Promise<void> {
+  try {
+    await api.destroySession();
+  } finally {
+    clearSid();
+  }
+}

@@ -1,9 +1,12 @@
 # 阅读副驾（weread-copilot）
 
-读书选择器 + 阅读痕迹作品化工具。已交付：
+读书选择器 + 阅读痕迹作品化工具。当前代码已实现（自动检查与构建通过，真实完整用户旅程仍待有效 Key 终验）：
 
 - **Phase 1**：BYOK 会话、三维书架落地页（动态调色板）、阅读数据可视化
 - **Phase 2**：真实同步层（F3.1 全量 / F3.2 增量 / F3.3 速度基线）、同步进度协议
+- **Phase 3**：选书决策、决策历史、30 天书评缓存
+- **Phase 4**：单书回顾、跨书主题、Markdown 导出、设置/数据控制、访问口令
+- **v1.3 视觉迭代**：书架 hero 中心真实同步环、完成门控、中性应用外壳、封面原色与静态降级
 
 ## 启动
 
@@ -27,7 +30,7 @@ npm run dev
 | mock（默认） | `npm run dev` | 12 本虚构中文书，封面由服务端动态生成 SVG（`/api/cover/:bookId`），调色板从封面底色推导 |
 | real | `WEREAD_MODE=real npm run dev:server` | 微信读书 Agent API Gateway（`POST https://i.weread.qq.com/api/agent/gateway`，Bearer key，参数平铺 + `skill_version: "1.0.4"`）。封面由服务端代理拉取并落盘缓存（`server/data/covers/`），主色用 sharp 提取后写回 `book_cache` |
 
-真实模式在 Key 配置门输入微信读书 API Key：服务端调 `/user/notebooks` 验证 → 建会话并立即返回 → 后台跑全量同步（笔记本翻页 → 书架 → 划线/想法并发 ≤8 → 封面批量取主色 → readdata 周分桶 → 速度基线），前端轮询 `GET /api/sync/progress` 显示真实进度。之后每次进入书架页做增量同步（笔记概览 sort 对比，只重拉变化的书）。Key 只存服务端会话内存，不落盘、不写日志。
+真实模式在 Key 配置门输入微信读书 API Key：服务端调 `/user/notebooks` 验证 → 建会话并立即返回 → 后台跑全量同步（笔记本翻页 → 书架 → 划线/想法并发 ≤8 → 封面批量取主色 → readdata 周分桶 → 速度基线），前端轮询 `GET /api/sync/progress`，在书架 hero 中心环显示真实百分比与阶段；TopNav 只显示一般同步状态。之后每次进入书架页做增量同步（笔记概览 sort 对比，只重拉变化的书）。Key 只存服务端会话内存，不落盘、不写日志。
 
 无 key 时可用 `server/src/mock/gateway.ts`（实现 GatewayClient 接口的内存网关）空跑整条同步管道自检。
 
@@ -39,6 +42,7 @@ npm run dev
 | `npm run dev:server` | 只起服务端（8787） |
 | `npm run dev:web` | 只起前端（5173） |
 | `npm run build` | server 与 web 的 tsc 全量类型检查 + Vite 产物构建（`web/dist/`） |
+| `npm run check:*` | 运行全部自动检查；包含同步基线、账户/访问控制、决策、书评缓存、认证错误、F2.1 与视觉/F2.2/F2.3 回归 |
 
 ## 目录
 
@@ -56,10 +60,11 @@ weread/
     data/               weread.db 与封面缓存（运行时生成，已 gitignore）
   web/
     src/
-      pages/            ShelfPage / SetupPage / DecidePage·ReviewPage·SettingsPage（占位）
+      pages/            ShelfPage / SetupPage / DecidePage·ReviewPage·SettingsPage
       shelf3d/          ShelfScene（Three.js 书架）、textures、StaticShelf 降级
-      api.ts / theme.ts / router.ts / types.ts
+      api.ts / shelfState.ts / theme.ts / router.ts / types.ts
       styles/           全局样式与 CSS 变量
+  scripts/              各阶段自动检查（含 check-visual-iteration.ts）
 ```
 
 ## 接口速查
@@ -76,6 +81,6 @@ weread/
 
 ## 约定
 
-- 前端不引 UI 组件库与图表库，图表为手写 SVG；样式由 CSS 变量驱动（焦点书调色板 → `:root` 批量 `setProperty`，720ms 过渡）
+- 前端不引 UI 组件库与图表库，图表为手写 SVG；样式由 CSS 变量驱动（焦点书调色板只写入 shelf hero 局部变量，720ms 过渡）
 - 三维书架仅实例化焦点 ±8 本网格，封面纹理 LRU 上限 40；`prefers-reduced-motion` 或 WebGL 不可用时退化为静态封面网格
 - mock 与 real 落库后走同一读取路径，UI / 3D 层不感知模式差异

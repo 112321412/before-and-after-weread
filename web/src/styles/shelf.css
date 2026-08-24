@@ -165,6 +165,27 @@
   background: color-mix(in srgb, var(--paper-deep) 70%, transparent);
 }
 
+.shelf-sync-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 10px;
+}
+
+.shelf-change-key {
+  padding: 9px 18px;
+  border: 1px solid color-mix(in srgb, var(--ink-soft) 42%, transparent);
+  border-radius: 999px;
+  color: var(--ink-soft);
+  background: transparent;
+}
+
+.shelf-retry:hover,
+.shelf-change-key:hover {
+  color: var(--ink);
+  border-color: var(--accent);
+}
+
 .shelf-error button {
   padding: 8px 20px;
   font-size: 13.5px;

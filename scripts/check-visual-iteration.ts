@@ -8,7 +8,7 @@ async function source(relativePath: string): Promise<string> {
   return readFile(new URL(`../${relativePath}`, import.meta.url), "utf8");
 }
 
-const [shelfPage, shelfState, topNav, theme, globalCss, shelfCss, shelfScene, textures, staticShelf, reviewPage] =
+const [shelfPage, shelfState, topNav, theme, globalCss, shelfCss, shelfScene, textures, staticShelf, reviewPage, appSource, apiSource] =
   await Promise.all([
     source("web/src/pages/ShelfPage.tsx"),
     source("web/src/shelfState.ts"),
@@ -19,7 +19,9 @@ const [shelfPage, shelfState, topNav, theme, globalCss, shelfCss, shelfScene, te
     source("web/src/shelf3d/ShelfScene.ts"),
     source("web/src/shelf3d/textures.ts"),
     source("web/src/shelf3d/StaticShelf.tsx"),
-    source("web/src/pages/ReviewPage.tsx")
+    source("web/src/pages/ReviewPage.tsx"),
+    source("web/src/App.tsx"),
+    source("web/src/api.ts")
   ]);
 
 // 同步环、TopNav 和阅读数据门控：数值只来自 SyncProgress，入口还要等待统计成功。
@@ -38,6 +40,18 @@ assert.match(shelfPage, /showReadingData && stats \? <StatsSection stats=\{stats
 assert.match(shelfPage, /setStats\(null\)/);
 assert.match(shelfPage, /phase === "error"/);
 assert.doesNotMatch(topNav, /%|percent|stage/i, "TopNav 不应渲染百分比或阶段进度");
+
+// 错误态的两个动作必须分离：重试只刷新当前会话，更换 Key 要走会话失效和 sid 清理。
+assert.match(shelfPage, /onRetry: \(\) => void/);
+assert.match(shelfPage, /onChangeKey: \(\) => void/);
+assert.match(shelfPage, /onClick=\{onRetry\}[\s\S]*重试同步/);
+assert.match(shelfPage, /onClick=\{onChangeKey\}[\s\S]*更换 Key/);
+const changeKeyAction = shelfPage.slice(shelfPage.indexOf("onClick={onChangeKey}"), shelfPage.indexOf("onClick={onChangeKey}") + 180);
+assert.doesNotMatch(changeKeyAction, /window\.location\.reload/);
+assert.match(appSource, /destroySessionAndClearSid\(\)/);
+assert.match(appSource, /setPhase\("setup"\)/);
+assert.match(apiSource, /await api\.destroySession\(\)/);
+assert.match(apiSource, /clearSid\(\)/);
 
 const { canBrowseShelf, canShowReadingData } = await import("../web/src/shelfState.js");
 const syncing = { phase: "notes", current: 2, total: 4, percent: 0.5 } as const;
