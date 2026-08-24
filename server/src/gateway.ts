@@ -80,8 +80,9 @@ export interface BookInfoResponse extends GatewayEnvelope {
 export interface BookProgressResponse extends GatewayEnvelope {
   bookId: string;
   book: {
-    progress: number; // 0-100，只有 100 代表读完
-    recordReadingTime: number; // 累计阅读时长（秒）
+    progress: number; // 真实回包中读完的书也常为 99，读完判定以 finishTime 为准
+    readingTime?: number; // 单书文字阅读时长（秒）。recordReadingTime 是朗读/TTS 时长，常为 0
+    recordReadingTime?: number;
     finishTime?: number;
     updateTime: number;
   };

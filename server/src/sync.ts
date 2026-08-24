@@ -3,6 +3,7 @@ import path from "node:path";
 import { COVER_CACHE_DIR, db } from "./db.js";
 import type { GatewayClient, NotebookEntry, NotebooksResponse, ShelfSyncResponse } from "./gateway.js";
 import { dominantFromImage, paletteFromDominant } from "./palette.js";
+import { isFinishedReading, readingSeconds, resolveWordCount } from "./reading.js";
 
 // ---- 会话与同步状态 ----
 
@@ -308,9 +309,17 @@ async function syncBaseline(sid: string, gateway: GatewayClient, vid: string): P
       gateway.fetchBookProgress(row.book_id),
       gateway.fetchBookInfo(row.book_id)
     ]);
-    const minutes = progress.book.recordReadingTime / 60;
-    if (progress.book.progress !== 100 || minutes <= 30 || !(info.wordCount > 0)) continue;
-    samples.push(info.wordCount / minutes);
+    // 真实口径（见 gateway.ts 注释）：读完看 finishTime；时长用 readingTime（recordReadingTime 是朗读时长）
+    const minutes = readingSeconds(progress.book) / 60;
+    const finishedBook = isFinishedReading(progress.book);
+    let wordCount = info.wordCount ?? 0;
+    if (wordCount <= 0) {
+      // /book/info 的网关回包常无 wordCount，从章节目录求和
+      const chapters = await gateway.fetchChapterInfo(row.book_id);
+      wordCount = resolveWordCount(info.wordCount, chapters.chapters.map((chapter) => chapter.wordCount));
+    }
+    if (!finishedBook || minutes <= 30 || !(wordCount > 0)) continue;
+    samples.push(wordCount / minutes);
   }
   const { wpm, basis } = computeBaseline(samples);
   db.prepare(`INSERT OR REPLACE INTO speed_baseline (vid, words_per_minute, basis, updated_at) VALUES (?, ?, ?, ?)`).run(

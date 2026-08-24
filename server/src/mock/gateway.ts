@@ -165,6 +165,7 @@ export function createMockGateway(): GatewayClient {
           bookId,
           book: {
             progress: finished ? 100 : 42,
+            readingTime: READING_SECONDS[bookId],
             recordReadingTime: READING_SECONDS[bookId],
             ...(finished ? { finishTime: 1770000000 } : {}),
             updateTime: 1770000000
@@ -177,6 +178,7 @@ export function createMockGateway(): GatewayClient {
         bookId,
         book: {
           progress: shelf?.progress ?? 0,
+          readingTime: (shelf?.readMinutes ?? 0) * 60,
           recordReadingTime: (shelf?.readMinutes ?? 0) * 60,
           ...(shelf?.finished ? { finishTime: 1770000000 } : {}),
           updateTime: 1770000000
