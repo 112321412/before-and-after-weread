@@ -10,6 +10,7 @@
     "build": "tsc -p server --noEmit && tsc -p web --noEmit && vite build web",
     "check:reading": "tsx scripts/check-reading-baseline.ts",
     "check:key": "tsx scripts/check-key-guard.ts",
+    "check:review-cache": "tsx scripts/check-review-cache.ts",
     "preview": "vite preview web"
   },
   "dependencies": {

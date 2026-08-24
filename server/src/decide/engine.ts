@@ -236,6 +236,44 @@ function detectStyle(chapterTitles: string[]): BookStyle {
 
 const cardCache = new Map<string, DecisionCard>();
 
+type ReviewBand = "recommend" | "negative" | "neutral";
+
+const REVIEW_CACHE_TTL_MS = 30 * 24 * 60 * 60 * 1000;
+const REVIEW_LIST_TYPES: Record<ReviewBand, 1 | 2 | 4> = {
+  recommend: 1,
+  negative: 2,
+  neutral: 4
+};
+
+interface ReviewCacheRow {
+  reviews: string;
+  snapshot_date: string;
+}
+
+export async function fetchReviewListCached(
+  gateway: GatewayClient,
+  bookId: string,
+  band: ReviewBand
+): Promise<ReviewListResponse> {
+  const row = db
+    .prepare(`SELECT reviews, snapshot_date FROM review_cache WHERE book_id = ? AND band = ?`)
+    .get(bookId, band) as ReviewCacheRow | undefined;
+  const age = row ? Date.now() - Date.parse(row.snapshot_date) : Number.POSITIVE_INFINITY;
+  if (row && Number.isFinite(age) && age < REVIEW_CACHE_TTL_MS) {
+    return JSON.parse(row.reviews) as ReviewListResponse;
+  }
+
+  const response = await gateway.fetchReviewList(bookId, REVIEW_LIST_TYPES[band]);
+  db.prepare(
+    `INSERT INTO review_cache (book_id, band, reviews, snapshot_date)
+     VALUES (?, ?, ?, ?)
+     ON CONFLICT(book_id, band) DO UPDATE SET
+       reviews = excluded.reviews,
+       snapshot_date = excluded.snapshot_date`
+  ).run(bookId, band, JSON.stringify(response), new Date().toISOString());
+  return response;
+}
+
 function toRawReviews(response: ReviewListResponse): RawReview[] {
   return response.reviews.map((entry) => ({
     reviewId: entry.review.review.reviewId,
@@ -273,9 +311,9 @@ export async function buildCard(session: Session, bookId: string, intent: Intent
     gateway.fetchBookInfo(bookId),
     gateway.fetchChapterInfo(bookId),
     gateway.fetchBestBookmarks(bookId),
-    gateway.fetchReviewList(bookId, 1),
-    gateway.fetchReviewList(bookId, 2),
-    gateway.fetchReviewList(bookId, 4),
+    fetchReviewListCached(gateway, bookId, "recommend"),
+    fetchReviewListCached(gateway, bookId, "negative"),
+    fetchReviewListCached(gateway, bookId, "neutral"),
     gateway.fetchSimilar(bookId)
   ]);
 
