@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { api, setSid } from "../api";
+import { api, isWeReadKey, setSid } from "../api";
 import type { SyncPhase } from "../types";
 
 interface SetupPageProps {
@@ -35,11 +35,17 @@ export function SetupPage({ mode, onReady }: SetupPageProps) {
   const [stageLabel, setStageLabel] = useState("");
 
   async function submit(inputKey: string) {
-    setBusy(true);
+    const normalizedKey = inputKey.trim();
     setError("");
+    if (mode === "real" && !isWeReadKey(normalizedKey)) {
+      setError("请输入 wrk- 开头的微信读书 API Key");
+      setBusy(false);
+      return;
+    }
+    setBusy(true);
     setProgress(0);
     try {
-      const { sid, mode: sessionMode } = await api.createSession(inputKey);
+      const { sid, mode: sessionMode } = await api.createSession(mode === "real" ? normalizedKey : "");
       setSid(sid);
       if (sessionMode === "real") {
         await pollSyncProgress();
@@ -112,11 +118,15 @@ export function SetupPage({ mode, onReady }: SetupPageProps) {
             >
               <input
                 className="setup-input"
-                type="text"
+                type="password"
                 value={key}
                 placeholder="wrk-xxxxxxxx（微信读书 API Key）"
-                autoComplete="off"
+                autoComplete="new-password"
                 spellCheck={false}
+                autoCapitalize="none"
+                autoCorrect="off"
+                inputMode="text"
+                aria-invalid={Boolean(error)}
                 onChange={(event) => setKey(event.target.value)}
               />
               <button className="setup-submit" type="submit" disabled={mode === "real" && key.trim() === ""}>

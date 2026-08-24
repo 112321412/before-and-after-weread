@@ -26,6 +26,10 @@ export function clearSid(): void {
   localStorage.removeItem(SID_KEY);
 }
 
+export function isWeReadKey(value: string): boolean {
+  return /^wrk-.+/.test(value.trim());
+}
+
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const sid = getSid();
   const res = await fetch(path, {
@@ -44,7 +48,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 export const api = {
   sessionStatus: () => request<SessionStatus>("/api/session"),
   createSession: (key: string) =>
-    request<{ sid: string; mode: string }>("/api/session", { method: "POST", body: JSON.stringify({ key }) }),
+    request<{ sid: string; mode: string }>("/api/session", { method: "POST", body: JSON.stringify({ key: key.trim() }) }),
   destroySession: () => request<{ ok: boolean }>("/api/session", { method: "DELETE" }),
   syncProgress: () => request<SyncProgress>("/api/sync/progress"),
   shelf: () => request<ShelfResponse>("/api/shelf"),

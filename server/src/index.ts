@@ -4,6 +4,7 @@ import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { COVER_CACHE_DIR, db, seedMockIfEmpty } from "./db.js";
 import { createGateway } from "./gateway.js";
+import { isWeReadKey } from "./key.js";
 import { hashSeed, paletteFromTitle, type Palette } from "./palette.js";
 import {
   cacheShelfFromGateway,
@@ -65,8 +66,8 @@ app.post("/api/session", async (req: Request, res: Response, next: NextFunction)
   try {
     const key = typeof req.body?.key === "string" ? req.body.key.trim() : "";
     if (MODE === "real") {
-      if (!key) {
-        res.status(400).json({ error: "请输入微信读书 API Key（wrk- 开头）" });
+      if (!isWeReadKey(key)) {
+        res.status(400).json({ error: "请输入微信读书 API Key（必须以 wrk- 开头）" });
         return;
       }
       // 验证 key（拉笔记本第一页），通过即建会话；全量同步在后台跑，进度走 /api/sync/progress
