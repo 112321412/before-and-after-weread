@@ -3,6 +3,14 @@
 // 新增接口 = 在返回对象上加一个十几行的薄封装，骨架零改动。
 const GATEWAY_URL = "https://i.weread.qq.com/api/agent/gateway";
 const SKILL_VERSION = "1.0.4";
+const GATEWAY_AUTH_ERROR = "Key 无效、过期或权限不匹配，请重新生成";
+
+export class GatewayHttpError extends Error {
+  constructor(readonly statusCode: number) {
+    super(statusCode === 401 || statusCode === 403 ? GATEWAY_AUTH_ERROR : `网关请求失败：HTTP ${statusCode}`);
+    this.name = "GatewayHttpError";
+  }
+}
 
 export interface GatewayEnvelope {
   errcode?: number;
@@ -200,11 +208,11 @@ export function createGateway(key: string): GatewayClient {
       headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
       body: JSON.stringify({ api_name: apiName, ...params, skill_version: SKILL_VERSION })
     });
-    if (!res.ok) throw new Error(`网关请求失败：HTTP ${res.status}`);
+    if (!res.ok) throw new GatewayHttpError(res.status);
     const body = (await res.json()) as T;
     // 成功回包的 errcode 字段可以整个缺席（真实网关验证），只有显式非 0 才是错误
     if (typeof body.errcode === "number" && body.errcode !== 0) {
-      throw new Error(`网关返回错误：${body.errmsg ?? body.errcode}`);
+      throw new Error(`网关返回错误：${body.errcode}`);
     }
     return body;
   };

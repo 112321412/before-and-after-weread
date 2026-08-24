@@ -3,7 +3,7 @@ import { randomUUID } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { COVER_CACHE_DIR, db, seedMockIfEmpty } from "./db.js";
-import { createGateway } from "./gateway.js";
+import { createGateway, GatewayHttpError } from "./gateway.js";
 import { isWeReadKey } from "./key.js";
 import { hashSeed, paletteFromTitle, type Palette } from "./palette.js";
 import {
@@ -356,6 +356,10 @@ app.get("/api/cover/:bookId", async (req: Request, res: Response, next: NextFunc
 app.use((err: Error, req: Request, res: Response, next: NextFunction) => {
   if (res.headersSent) {
     next(err);
+    return;
+  }
+  if (err instanceof GatewayHttpError) {
+    res.status(err.statusCode).json({ error: err.message });
     return;
   }
   res.status(500).json({ error: err.message || "服务内部错误" });
