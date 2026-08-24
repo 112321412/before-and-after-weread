@@ -59,6 +59,11 @@ export interface SyncProgress {
   error?: string;
 }
 
+export interface AccessStatus {
+  required: boolean;
+  authenticated: boolean;
+}
+
 export type SpoilerLevel = "none" | "light" | "full";
 
 export interface SettingsResponse {

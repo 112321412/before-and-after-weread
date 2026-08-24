@@ -5,6 +5,7 @@ import path from "node:path";
 import { COVER_CACHE_DIR, db, seedMockIfEmpty } from "./db.js";
 import { createGateway, GatewayHttpError } from "./gateway.js";
 import { accountVidFromKey, isWeReadKey } from "./key.js";
+import { isAccessRequired, isAccessTokenValid, issueAccessToken, requireAccess } from "./access.js";
 import { hashSeed, paletteFromTitle, type Palette } from "./palette.js";
 import {
   cacheShelfFromGateway,
@@ -57,6 +58,28 @@ interface ShelfBook {
 
 const app = express();
 app.use(express.json());
+
+// F3.6 例外端点：只报告门控状态或换取内存短期 token，不暴露原口令。
+app.get("/api/access/status", (req: Request, res: Response) => {
+  const required = isAccessRequired();
+  res.json({ required, authenticated: !required || isAccessTokenValid(req.header("x-access-token")) });
+});
+
+app.post("/api/access/token", (req: Request, res: Response) => {
+  if (!isAccessRequired()) {
+    res.json({ required: false });
+    return;
+  }
+  const password = typeof req.body?.password === "string" ? req.body.password : "";
+  const token = issueAccessToken(password);
+  if (!token) {
+    res.status(403).json({ error: "访问口令错误" });
+    return;
+  }
+  res.json({ required: true, token });
+});
+
+app.use(requireAccess);
 app.use(reviewRouter);
 app.use(accountRouter);
 

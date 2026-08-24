@@ -5,6 +5,7 @@ import type {
   IntentResult,
   RecallDraft,
   ReviewBookItem,
+  AccessStatus,
   SessionStatus,
   SettingsResponse,
   ShelfResponse,
@@ -15,6 +16,12 @@ import type {
 } from "./types";
 
 const SID_KEY = "weread-copilot-sid";
+const ACCESS_TOKEN_KEY = "weread-copilot-access-token";
+export const ACCESS_REQUIRED_EVENT = "weread-access-required";
+
+export interface ApiError extends Error {
+  code?: string;
+}
 
 export function getSid(): string | null {
   return localStorage.getItem(SID_KEY);
@@ -32,22 +39,62 @@ export function isWeReadKey(value: string): boolean {
   return Boolean(value.trim());
 }
 
+export function getAccessToken(): string | null {
+  return sessionStorage.getItem(ACCESS_TOKEN_KEY);
+}
+
+export function setAccessToken(token: string): void {
+  sessionStorage.setItem(ACCESS_TOKEN_KEY, token);
+}
+
+export function clearAccessToken(): void {
+  sessionStorage.removeItem(ACCESS_TOKEN_KEY);
+}
+
+export function isAccessErrorCode(code?: string): boolean {
+  return code === "ACCESS_REQUIRED" || code === "ACCESS_EXPIRED";
+}
+
+export function isAccessGateFailure(status: number, code?: string): boolean {
+  return (status === 401 || status === 403) && isAccessErrorCode(code);
+}
+
+function handleAccessFailure(path: string, status: number, code?: string): void {
+  if (isAccessGateFailure(status, code) && !path.startsWith("/api/access/")) {
+    clearAccessToken();
+    window.dispatchEvent(new Event(ACCESS_REQUIRED_EVENT));
+  }
+}
+
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const sid = getSid();
+  const accessToken = getAccessToken();
   const res = await fetch(path, {
     ...init,
     headers: {
       "Content-Type": "application/json",
       ...(sid ? { "x-sid": sid } : {}),
+      ...(accessToken ? { "x-access-token": accessToken } : {}),
       ...init?.headers
     }
   });
-  const body = (await res.json().catch(() => ({}))) as T & { error?: string };
-  if (!res.ok) throw new Error(body.error || `请求失败（HTTP ${res.status}）`);
+  const body = (await res.json().catch(() => ({}))) as T & { error?: string; code?: string };
+  if (!res.ok) {
+    handleAccessFailure(path, res.status, body.code);
+    const error = new Error(body.error || `请求失败（HTTP ${res.status}）`) as ApiError;
+    error.code = body.code;
+    throw error;
+  }
   return body;
 }
 
 export const api = {
+  accessStatus: () => request<AccessStatus>("/api/access/status"),
+  exchangeAccessPassword: (password: string) =>
+    request<{ required: boolean; token?: string }>("/api/access/token", {
+      method: "POST",
+      body: JSON.stringify({ password })
+    }),
   sessionStatus: () => request<SessionStatus>("/api/session"),
   createSession: (key: string) =>
     request<{ sid: string; mode: string }>("/api/session", { method: "POST", body: JSON.stringify({ key: key.trim() }) }),
@@ -72,11 +119,13 @@ export const api = {
   decisionHistory: () => request<{ decisions: DecisionHistoryItem[] }>("/api/decision"),
   exportData: async (): Promise<void> => {
     const sid = getSid();
+    const accessToken = getAccessToken();
     const res = await fetch("/api/data/export", {
-      headers: { ...(sid ? { "x-sid": sid } : {}) }
+      headers: { ...(sid ? { "x-sid": sid } : {}), ...(accessToken ? { "x-access-token": accessToken } : {}) }
     });
     if (!res.ok) {
-      const body = (await res.json().catch(() => ({}))) as { error?: string };
+      const body = (await res.json().catch(() => ({}))) as { error?: string; code?: string };
+      handleAccessFailure("/api/data/export", res.status, body.code);
       throw new Error(body.error || "导出失败");
     }
     const blob = await res.blob();
@@ -96,13 +145,19 @@ export const api = {
   // 导出返回文件流，不走统一 JSON 封装
   reviewExport: async (title: string, markdown: string): Promise<void> => {
     const sid = getSid();
+    const accessToken = getAccessToken();
     const res = await fetch("/api/review/export", {
       method: "POST",
-      headers: { "Content-Type": "application/json", ...(sid ? { "x-sid": sid } : {}) },
+      headers: {
+        "Content-Type": "application/json",
+        ...(sid ? { "x-sid": sid } : {}),
+        ...(accessToken ? { "x-access-token": accessToken } : {})
+      },
       body: JSON.stringify({ title, markdown })
     });
     if (!res.ok) {
-      const body = (await res.json().catch(() => ({}))) as { error?: string };
+      const body = (await res.json().catch(() => ({}))) as { error?: string; code?: string };
+      handleAccessFailure("/api/review/export", res.status, body.code);
       throw new Error(body.error || "导出失败");
     }
     const blob = await res.blob();
