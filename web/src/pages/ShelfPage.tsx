@@ -53,7 +53,8 @@ export function ShelfPage({ onSyncStateChange }: ShelfPageProps) {
             return;
           }
           if (progress.phase === "done") {
-            const [freshShelf, freshStats] = await Promise.all([api.shelf(), api.stats()]);
+            const freshShelf = await api.shelf();
+            const freshStats = await api.stats();
             applySnapshot(freshShelf, freshStats);
             return;
           }

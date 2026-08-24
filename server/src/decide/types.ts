@@ -16,6 +16,19 @@ export const GOAL_LABELS: Record<GoalType, string> = {
   revisit: "重读"
 };
 
+export const MAX_DECISION_CANDIDATES = 3;
+
+export function isValidDecisionSelection(value: unknown, currentBookId: string): value is string[] {
+  return (
+    Array.isArray(value) &&
+    value.length >= 1 &&
+    value.length <= MAX_DECISION_CANDIDATES &&
+    value.every((id): id is string => typeof id === "string" && id.trim() !== "") &&
+    new Set(value).size === value.length &&
+    value.includes(currentBookId)
+  );
+}
+
 export interface Constraints {
   weeklyHours?: number;
   timeBudgetHours?: number;

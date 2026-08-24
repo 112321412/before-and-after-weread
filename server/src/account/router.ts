@@ -1,7 +1,7 @@
 import { Router, type Request, type Response } from "express";
 import { db } from "../db.js";
 import { requireSession, sessions, type AuthedRequest } from "../sessions.js";
-import { syncStates } from "../sync.js";
+import { cancelSync, syncStates } from "../sync.js";
 
 export const accountRouter = Router();
 
@@ -10,6 +10,13 @@ export type SpoilerLevel = (typeof SPOILER_LEVELS)[number];
 
 export function isSpoilerLevel(value: unknown): value is SpoilerLevel {
   return typeof value === "string" && (SPOILER_LEVELS as readonly string[]).includes(value);
+}
+
+export function countPersonalNotes(table: "highlight" | "thought", vid: string, bookId: string): number {
+  const row = db
+    .prepare(`SELECT COUNT(*) AS count FROM ${table} WHERE vid = ? AND book_id = ?`)
+    .get(vid, bookId) as { count: number };
+  return row.count;
 }
 
 const PERSONAL_TABLES = [
@@ -49,6 +56,7 @@ export function deletePersonalData(vid: string): void {
 }
 
 export function deletePersonalDataAndSession(sid: string, vid: string): void {
+  cancelSync(sid);
   deletePersonalData(vid);
   sessions.delete(sid);
   syncStates.delete(sid);

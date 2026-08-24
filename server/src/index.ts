@@ -9,9 +9,12 @@ import { isAccessRequired, isAccessTokenValid, issueAccessToken, requireAccess }
 import { hashSeed, paletteFromTitle, type Palette } from "./palette.js";
 import {
   cacheShelfFromGateway,
+  finishedSampleSignature,
   incrementalSyncNotes,
+  isSyncActive,
   markSyncError,
   processRemoteCover,
+  refreshIncrementalStats,
   runFullSync,
   syncStates,
   type Session,
@@ -19,7 +22,7 @@ import {
 } from "./sync.js";
 import { requireSession, sessions, type AuthedRequest } from "./sessions.js";
 import { reviewRouter } from "./review/router.js";
-import { accountRouter } from "./account/router.js";
+import { accountRouter, countPersonalNotes } from "./account/router.js";
 import { MOCK_BOOKS, MOCK_VID, mockWeeklyMinutes } from "./mock/data.js";
 import { svgCover } from "./mock/cover.js";
 import {
@@ -30,7 +33,7 @@ import {
   recordDecision,
   resolveBookByTitle
 } from "./decide/engine.js";
-import type { IntentResult } from "./decide/types.js";
+import { MAX_DECISION_CANDIDATES, isValidDecisionSelection, type IntentResult } from "./decide/types.js";
 
 const MODE = process.env.WEREAD_MODE === "real" ? "real" : "mock";
 const PORT = 8787;
@@ -141,14 +144,20 @@ app.get("/api/shelf", requireSession, async (req: Request, res: Response, next: 
     const session = (req as AuthedRequest).session;
     if (session.gateway) {
       const state = syncStates.get(session.sid);
-      if (!state || state.phase === "done" || state.phase === "error") {
+      if (isSyncActive(session.sid) && (!state || state.phase === "done" || state.phase === "error")) {
         // F3.2 增量同步：首次全量同步进行中时只读本地快照，避免并发请求上游。
         try {
-          cacheShelfFromGateway(session.vid, await session.gateway.fetchShelf());
+          const previousFinishedSample = finishedSampleSignature(session.vid);
+          cacheShelfFromGateway(session.vid, await session.gateway.fetchShelf(), session.sid);
+          if (!isSyncActive(session.sid)) {
+            res.json({ mode: MODE, books: loadShelf(session.vid), sync: syncStates.get(session.sid) });
+            return;
+          }
           await incrementalSyncNotes(session);
+          await refreshIncrementalStats(session, previousFinishedSample);
         } catch {
           // 上游失败时仍返回已有本地快照；失败状态由同步进度与设置页明确展示。
-          markSyncError(session.sid);
+          if (isSyncActive(session.sid)) markSyncError(session.sid);
         }
       }
     }
@@ -186,17 +195,12 @@ function loadShelf(vid: string): ShelfBook[] {
       readMinutes: row.read_minutes as number,
       lastReadAt: (row.last_read_at as string) ?? null,
       finishedAt: (row.finished_at as string) ?? null,
-      highlights: countNotes("highlight", bookId),
-      thoughts: countNotes("thought", bookId),
+      highlights: countPersonalNotes("highlight", vid, bookId),
+      thoughts: countPersonalNotes("thought", vid, bookId),
       archive: (row.archive as string) ?? null,
       sizeSeed: hashSeed(bookId)
     };
   });
-}
-
-function countNotes(table: "highlight" | "thought", bookId: string): number {
-  const row = db.prepare(`SELECT COUNT(*) AS count FROM ${table} WHERE book_id = ?`).get(bookId) as { count: number };
-  return row.count;
 }
 
 // ---- 阅读数据四件 ----
@@ -294,6 +298,11 @@ app.post("/api/decide/card", requireSession, async (req: Request, res: Response,
     const session = (req as AuthedRequest).session;
     const bookId = typeof req.body?.bookId === "string" ? req.body.bookId : "";
     const intent = req.body?.intent as IntentResult | undefined;
+    const selectedBookIds = req.body?.selectedBookIds;
+    if (!isValidDecisionSelection(selectedBookIds, bookId)) {
+      res.status(400).json({ error: `一次最多选择 ${MAX_DECISION_CANDIDATES} 本候选，且必须包含当前书目` });
+      return;
+    }
     if (!bookId || !intent?.verbatim) {
       res.status(400).json({ error: "缺少书目或目标" });
       return;

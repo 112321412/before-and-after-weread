@@ -112,8 +112,11 @@ export const api = {
     request<IntentResult>("/api/decide/intent", { method: "POST", body: JSON.stringify({ input }) }),
   decideCandidates: (intent: IntentResult, offset = 0) =>
     request<CandidatesResult>("/api/decide/candidates", { method: "POST", body: JSON.stringify({ intent, offset }) }),
-  decideCard: (bookId: string, intent: IntentResult) =>
-    request<DecisionCard>("/api/decide/card", { method: "POST", body: JSON.stringify({ bookId, intent }) }),
+  decideCard: (bookId: string, intent: IntentResult, selectedBookIds: string[]) =>
+    request<DecisionCard>("/api/decide/card", {
+      method: "POST",
+      body: JSON.stringify({ bookId, intent, selectedBookIds })
+    }),
   postDecision: (payload: { cardId: string; action: string; trigger?: string; reason?: string }) =>
     request<{ ok: boolean }>("/api/decision", { method: "POST", body: JSON.stringify(payload) }),
   decisionHistory: () => request<{ decisions: DecisionHistoryItem[] }>("/api/decision"),

@@ -14,6 +14,7 @@ import {
 
 const VERDICT_LABELS: Record<string, string> = { read_now: "现在读", shelve: "放入待读", skip: "排除" };
 const EXAMPLE_INPUT = "我想理解组织为什么失灵，但不想读太学术的书";
+const MAX_DECISION_CANDIDATES = 3;
 
 type Stage = "input" | "chips" | "candidates" | "generating" | "cards";
 
@@ -78,7 +79,7 @@ export function DecidePage() {
     const generated: DecisionCard[] = [];
     try {
       for (const bookId of bookIds) {
-        const card = await api.decideCard(bookId, intent!);
+        const card = await api.decideCard(bookId, intent!, bookIds);
         generated.push(card);
         setGenerateProgress({ current: generated.length, total: bookIds.length });
       }
@@ -164,7 +165,7 @@ export function DecidePage() {
             setSelected((current) => {
               const next = new Set(current);
               if (next.has(bookId)) next.delete(bookId);
-              else next.add(bookId);
+              else if (next.size < MAX_DECISION_CANDIDATES) next.add(bookId);
               return next;
             })
           }
@@ -242,6 +243,7 @@ function CandidateStep({
     <div className="decide-candidates">
       <p className="candidates-meta">
         搜索词：{result.keywords.join("、")}　·　已按评分人数与已读去重过滤 {result.filteredCount} 本　·　圈选 1-3 本
+        {selected.size >= MAX_DECISION_CANDIDATES && <span>　已达上限，最多选择 3 本</span>}
       </p>
       <div className="candidate-grid">
         {result.candidates.map((candidate) => (
@@ -250,6 +252,7 @@ function CandidateStep({
             candidate={candidate}
             checked={selected.has(candidate.bookId)}
             onToggle={() => onToggle(candidate.bookId)}
+            disabled={!selected.has(candidate.bookId) && selected.size >= MAX_DECISION_CANDIDATES}
           />
         ))}
       </div>
@@ -271,14 +274,22 @@ function CandidateStep({
 function CandidateCard({
   candidate,
   checked,
-  onToggle
+  onToggle,
+  disabled
 }: {
   candidate: Candidate;
   checked: boolean;
   onToggle: () => void;
+  disabled: boolean;
 }) {
   return (
-    <button type="button" className={`candidate-card${checked ? " checked" : ""}`} onClick={onToggle}>
+    <button
+      type="button"
+      className={`candidate-card${checked ? " checked" : ""}`}
+      onClick={onToggle}
+      disabled={disabled}
+      title={disabled ? "最多选择 3 本候选" : undefined}
+    >
       <div className="candidate-title-row">
         <strong>{candidate.title}</strong>
         <span className="candidate-rating">

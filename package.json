@@ -10,6 +10,7 @@
     "build": "tsc -p server --noEmit && tsc -p web --noEmit && vite build web",
     "check:reading": "tsx scripts/check-reading-baseline.ts",
     "check:account": "tsx scripts/check-account-data.ts",
+    "check:decision": "tsx scripts/check-decision-candidates.ts",
     "check:access": "tsx scripts/check-access.ts",
     "check:key": "tsx scripts/check-key-guard.ts",
     "check:review-cache": "tsx scripts/check-review-cache.ts",

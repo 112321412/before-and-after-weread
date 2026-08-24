@@ -36,8 +36,18 @@ const PHASE_WEIGHTS: { phase: SyncPhase; weight: number }[] = [
 
 export const syncStates = new Map<string, SyncState>();
 export const SYNC_ERROR_MESSAGE = "真实数据同步失败，可更换 Key 重试";
+const cancelledSyncs = new Set<string>();
+
+export function isSyncActive(sid: string): boolean {
+  return !cancelledSyncs.has(sid);
+}
+
+export function cancelSync(sid: string): void {
+  cancelledSyncs.add(sid);
+}
 
 function updateState(sid: string, phase: SyncPhase, current: number, total: number): void {
+  if (!isSyncActive(sid)) return;
   if (phase === "done") {
     syncStates.set(sid, { phase, current, total, percent: 1 });
     return;
@@ -55,6 +65,7 @@ function updateState(sid: string, phase: SyncPhase, current: number, total: numb
 }
 
 function errorState(sid: string): void {
+  if (!isSyncActive(sid)) return;
   const previous = syncStates.get(sid);
   syncStates.set(sid, {
     phase: "error",
@@ -117,11 +128,12 @@ async function paginateMyReviews(gateway: GatewayClient, bookId: string) {
 
 // ---- 笔记落库（划线 + 想法）----
 
-export async function replaceBookNotes(vid: string, gateway: GatewayClient, entry: NotebookEntry): Promise<void> {
+export async function replaceBookNotes(vid: string, gateway: GatewayClient, entry: NotebookEntry, sid?: string): Promise<void> {
   const [marks, reviews] = await Promise.all([
     gateway.fetchBookmarks(entry.bookId),
     paginateMyReviews(gateway, entry.bookId)
   ]);
+  if (sid && !isSyncActive(sid)) return;
   const tx = db.transaction(() => {
     db.prepare(`DELETE FROM highlight WHERE vid = ? AND book_id = ?`).run(vid, entry.bookId);
     const insertHighlight = db.prepare(
@@ -158,7 +170,8 @@ function setNoteSort(vid: string, bookId: string, sort: number, readingProgress:
 
 // ---- 书架落库 ----
 
-export function cacheShelfFromGateway(vid: string, shelf: ShelfSyncResponse): void {
+export function cacheShelfFromGateway(vid: string, shelf: ShelfSyncResponse, sid?: string): void {
+  if (sid && !isSyncActive(sid)) return;
   const now = Math.floor(Date.now() / 1000);
   const upsertBook = db.prepare(`
     INSERT INTO book_cache (book_id, title, author, meta, cover_proxy_path, cover_remote_url, fetched_at)
@@ -202,10 +215,15 @@ const COVER_TYPES: Record<string, string> = {
   webp: "image/webp"
 };
 
-export async function processRemoteCover(bookId: string, remoteUrl: string): Promise<{ body: Buffer; contentType: string }> {
+export async function processRemoteCover(
+  bookId: string,
+  remoteUrl: string,
+  sid?: string
+): Promise<{ body: Buffer; contentType: string }> {
   const imageRes = await fetch(remoteUrl);
   if (!imageRes.ok) throw new Error(`封面拉取失败：HTTP ${imageRes.status}`);
   const body = Buffer.from(await imageRes.arrayBuffer());
+  if (sid && !isSyncActive(sid)) throw new Error("SYNC_CANCELLED");
   const contentType = imageRes.headers.get("content-type") ?? "image/jpeg";
   const ext = Object.entries(COVER_TYPES).find(([, type]) => type === contentType)?.[0] ?? "jpg";
   const cacheFile = path.join(COVER_CACHE_DIR, `${bookId}.${ext}`);
@@ -219,6 +237,7 @@ export async function processRemoteCover(bookId: string, remoteUrl: string): Pro
   } catch {
     // 位图解码失败时保留书名回退色，封面本身照常下发
   }
+  if (sid && !isSyncActive(sid)) throw new Error("SYNC_CANCELLED");
   db.prepare(
     `UPDATE book_cache SET cover_cache_file = ?, dominant_color = COALESCE(?, dominant_color), palette = COALESCE(?, palette) WHERE book_id = ?`
   ).run(cacheFile, dominant, paletteJson, bookId);
@@ -226,6 +245,7 @@ export async function processRemoteCover(bookId: string, remoteUrl: string): Pro
 }
 
 async function prefetchCovers(sid: string, vid: string): Promise<void> {
+  if (!isSyncActive(sid)) return;
   const rows = db
     .prepare(
       `SELECT c.book_id, c.cover_remote_url
@@ -239,7 +259,7 @@ async function prefetchCovers(sid: string, vid: string): Promise<void> {
   let done = 0;
   await mapWithConcurrency(rows, 8, async (row) => {
     try {
-      await processRemoteCover(row.book_id, row.cover_remote_url);
+      await processRemoteCover(row.book_id, row.cover_remote_url, sid);
     } catch {
       // 单本封面失败不中断整场同步；/api/cover 的懒回填仍可兜住这本书
     } finally {
@@ -278,6 +298,7 @@ export function bucketWeeklyMinutes(
 async function syncReadStats(sid: string, gateway: GatewayClient, vid: string): Promise<void> {
   updateState(sid, "readdata", 0, 1);
   const data = await gateway.fetchReadData("monthly");
+  if (!isSyncActive(sid)) return;
   const { weeklyMinutes, monthMinutes } = bucketWeeklyMinutes(data.readTimes, data.totalReadTime);
   const now = Math.floor(Date.now() / 1000);
   db.prepare(`INSERT OR IGNORE INTO user_settings (vid, spoiler_level, updated_at) VALUES (?, 'none', ?)`).run(vid, now);
@@ -300,6 +321,7 @@ export function computeBaseline(samples: number[]): { wpm: number; basis: "own_m
 }
 
 async function syncBaseline(sid: string, gateway: GatewayClient, vid: string): Promise<void> {
+  if (!isSyncActive(sid)) return;
   updateState(sid, "baseline", 0, 1);
   const finished = db
     .prepare(
@@ -314,6 +336,7 @@ async function syncBaseline(sid: string, gateway: GatewayClient, vid: string): P
       gateway.fetchBookProgress(row.book_id),
       gateway.fetchBookInfo(row.book_id)
     ]);
+    if (!isSyncActive(sid)) return;
     // 真实口径（见 gateway.ts 注释）：读完看 finishTime；时长用 readingTime（recordReadingTime 是朗读时长）
     const minutes = readingSeconds(progress.book) / 60;
     const finishedBook = isFinishedReading(progress.book);
@@ -321,11 +344,13 @@ async function syncBaseline(sid: string, gateway: GatewayClient, vid: string): P
     if (wordCount <= 0) {
       // /book/info 的网关回包常无 wordCount，从章节目录求和
       const chapters = await gateway.fetchChapterInfo(row.book_id);
+      if (!isSyncActive(sid)) return;
       wordCount = resolveWordCount(info.wordCount, chapters.chapters.map((chapter) => chapter.wordCount));
     }
     if (!finishedBook || minutes <= 30 || !(wordCount > 0)) continue;
     samples.push(wordCount / minutes);
   }
+  if (!isSyncActive(sid)) return;
   const { wpm, basis } = computeBaseline(samples);
   db.prepare(`INSERT OR REPLACE INTO speed_baseline (vid, words_per_minute, basis, updated_at) VALUES (?, ?, ?, ?)`).run(
     vid,
@@ -340,40 +365,59 @@ async function syncBaseline(sid: string, gateway: GatewayClient, vid: string): P
 
 export async function runFullSync(sid: string, session: Session, seedPage?: NotebooksResponse): Promise<void> {
   const gateway = session.gateway;
-  if (!gateway) return;
+  if (!gateway || !isSyncActive(sid)) return;
   try {
     updateState(sid, "notebooks", 0, 1);
     const entries = await paginateNotebooks(gateway, seedPage);
+    if (!isSyncActive(sid)) return;
     updateState(sid, "notebooks", 1, 1);
 
     updateState(sid, "shelf", 0, 1);
-    cacheShelfFromGateway(session.vid, await gateway.fetchShelf());
+    const shelf = await gateway.fetchShelf();
+    if (!isSyncActive(sid)) return;
+    cacheShelfFromGateway(session.vid, shelf, sid);
     updateState(sid, "shelf", 1, 1);
 
     const targets = entries.filter((entry) => entry.noteCount + entry.reviewCount > 0);
     updateState(sid, "notes", 0, targets.length);
     let notesDone = 0;
     await mapWithConcurrency(targets, 8, async (entry) => {
-      await replaceBookNotes(session.vid, gateway, entry);
+      await replaceBookNotes(session.vid, gateway, entry, sid);
       notesDone += 1;
       updateState(sid, "notes", notesDone, targets.length);
     });
 
+    if (!isSyncActive(sid)) return;
     await prefetchCovers(sid, session.vid);
+    if (!isSyncActive(sid)) return;
     await syncReadStats(sid, gateway, session.vid);
+    if (!isSyncActive(sid)) return;
     await syncBaseline(sid, gateway, session.vid);
+    if (!isSyncActive(sid)) return;
     updateState(sid, "done", 1, 1);
   } catch {
-    errorState(sid);
+    if (isSyncActive(sid)) errorState(sid);
   }
 }
 
 // ---- 增量同步（F3.2：笔记概览 sort 对比，只重拉变化的书）----
 
+export function finishedSampleSignature(vid: string): string {
+  const rows = db
+    .prepare(
+      `SELECT book_id, finished_at FROM shelf_snapshot
+       WHERE vid = ? AND finished = 1
+       ORDER BY finished_at DESC, book_id LIMIT 5`
+    )
+    .all(vid) as { book_id: string; finished_at: string | null }[];
+  return rows.map((row) => `${row.book_id}:${row.finished_at ?? ""}`).join("|");
+}
+
 export async function incrementalSyncNotes(session: Session): Promise<number> {
   const gateway = session.gateway;
-  if (!gateway) return 0;
+  if (!gateway || !isSyncActive(session.sid)) return 0;
   const entries = await paginateNotebooks(gateway);
+  if (!isSyncActive(session.sid)) return 0;
   const stored = new Map(
     (
       db.prepare(`SELECT book_id, note_sort FROM shelf_snapshot WHERE vid = ?`).all(session.vid) as {
@@ -385,6 +429,18 @@ export async function incrementalSyncNotes(session: Session): Promise<number> {
   const changed = entries.filter(
     (entry) => entry.noteCount + entry.reviewCount > 0 && stored.get(entry.bookId) !== entry.sort
   );
-  await mapWithConcurrency(changed, 8, (entry) => replaceBookNotes(session.vid, gateway, entry));
+  await mapWithConcurrency(changed, 8, (entry) => replaceBookNotes(session.vid, gateway, entry, session.sid));
   return changed.length;
+}
+
+export async function refreshIncrementalStats(session: Session, previousFinishedSample: string): Promise<void> {
+  const gateway = session.gateway;
+  if (!gateway || !isSyncActive(session.sid)) return;
+  await syncReadStats(session.sid, gateway, session.vid);
+  if (!isSyncActive(session.sid)) return;
+  if (finishedSampleSignature(session.vid) !== previousFinishedSample) {
+    await syncBaseline(session.sid, gateway, session.vid);
+    if (!isSyncActive(session.sid)) return;
+  }
+  updateState(session.sid, "done", 1, 1);
 }
