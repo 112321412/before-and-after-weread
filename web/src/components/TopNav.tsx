@@ -10,6 +10,7 @@ interface TopNavProps {
 const NAV_ITEMS = [
   { path: "/shelf", label: "书架" },
   { path: "/decide", label: "选书决策" },
+  { path: "/reading-list", label: "我的待读" },
   { path: "/review", label: "读后整理" },
   { path: "/settings", label: "设置" }
 ];

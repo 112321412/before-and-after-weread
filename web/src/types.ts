@@ -205,10 +205,25 @@ export interface DecisionCard {
 
 export interface DecisionHistoryItem {
   id: number;
-  topic: string;
+  cardId: string;
+  bookId: string;
+  title: string;
+  topic: string | null;
   verdict: string;
-  action: string;
+  action: string | null;
+  trigger: string | null;
+  reason: string | null;
   createdAt: number;
+}
+
+export interface ReadingListItem {
+  recordId: number;
+  cardId: string;
+  bookId: string;
+  title: string;
+  author: string;
+  trigger: string | null;
+  updatedAt: number;
 }
 
 // ---- 读后整理（与 server/src/review/ 对齐）----

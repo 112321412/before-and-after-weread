@@ -29,8 +29,10 @@ import {
   buildCandidates,
   buildCard,
   listDecisions,
+  listReadingList,
   parseIntent,
   recordDecision,
+  rejudgeDecision,
   resolveBookByTitle
 } from "./decide/engine.js";
 import { MAX_DECISION_CANDIDATES, isValidDecisionSelection, type IntentResult } from "./decide/types.js";
@@ -334,9 +336,34 @@ app.post("/api/decision", requireSession, (req: Request, res: Response, next: Ne
   }
 });
 
+app.post("/api/decision/rejudge", requireSession, (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const session = (req as AuthedRequest).session;
+    const recordId = Number(req.body?.recordId);
+    const action = req.body?.action;
+    if (!Number.isInteger(recordId) || recordId <= 0 || !["read_now", "shelve", "skip"].includes(action)) {
+      res.status(400).json({ error: "无效的改判记录或动作" });
+      return;
+    }
+    rejudgeDecision(session.vid, recordId, {
+      action,
+      trigger: typeof req.body?.trigger === "string" ? req.body.trigger.trim() || undefined : undefined,
+      reason: typeof req.body?.reason === "string" ? req.body.reason.trim() || undefined : undefined
+    });
+    res.json({ ok: true });
+  } catch (err) {
+    next(err);
+  }
+});
+
 app.get("/api/decision", requireSession, (req: Request, res: Response) => {
   const session = (req as AuthedRequest).session;
   res.json({ decisions: listDecisions(session.vid) });
+});
+
+app.get("/api/reading-list", requireSession, (req: Request, res: Response) => {
+  const session = (req as AuthedRequest).session;
+  res.json({ items: listReadingList(session.vid) });
 });
 
 // ---- 封面代理：mock 动态生成 SVG；real 走落盘缓存（懒回填为同步预处理的兜底）----

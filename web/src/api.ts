@@ -5,6 +5,7 @@ import type {
   IntentResult,
   RecallDraft,
   ReviewBookItem,
+  ReadingListItem,
   AccessStatus,
   SessionStatus,
   SettingsResponse,
@@ -119,7 +120,10 @@ export const api = {
     }),
   postDecision: (payload: { cardId: string; action: string; trigger?: string; reason?: string }) =>
     request<{ ok: boolean }>("/api/decision", { method: "POST", body: JSON.stringify(payload) }),
+  rejudgeDecision: (payload: { recordId: number; action: string; trigger?: string; reason?: string }) =>
+    request<{ ok: boolean }>("/api/decision/rejudge", { method: "POST", body: JSON.stringify(payload) }),
   decisionHistory: () => request<{ decisions: DecisionHistoryItem[] }>("/api/decision"),
+  readingList: () => request<{ items: ReadingListItem[] }>("/api/reading-list"),
   exportData: async (): Promise<void> => {
     const sid = getSid();
     const accessToken = getAccessToken();

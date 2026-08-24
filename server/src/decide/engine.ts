@@ -1,6 +1,6 @@
 import { db } from "../db.js";
 import { generateJSON, llmState } from "../llm.js";
-import type { GatewayClient, ReviewListResponse } from "../gateway.js";
+import type { BookInfoResponse, ChapterInfoResponse, GatewayClient, ReviewListResponse } from "../gateway.js";
 import { createMockGateway } from "../mock/gateway.js";
 import { keywordsOf } from "../mock/bookstore.js";
 import { materializeReviews } from "../mock/reviews.js";
@@ -288,6 +288,67 @@ export async function fetchReviewListCached(
   return (await fetchReviewListCachedWithDate(gateway, bookId, band)).response;
 }
 
+interface BookCacheMetadata {
+  category?: string;
+  bookInfo?: BookInfoResponse;
+  chapters?: ChapterInfoResponse["chapters"];
+}
+
+interface BookMetadata {
+  bookInfo: BookInfoResponse;
+  chapterInfo: ChapterInfoResponse;
+}
+
+function readBookMetadata(bookId: string): BookMetadata | null {
+  const row = db.prepare(`SELECT title, author, meta FROM book_cache WHERE book_id = ?`).get(bookId) as
+    | { title: string; author: string | null; meta: string }
+    | undefined;
+  if (!row) return null;
+  let metadata: BookCacheMetadata;
+  try {
+    metadata = JSON.parse(row.meta) as BookCacheMetadata;
+  } catch {
+    return null;
+  }
+  const info = metadata.bookInfo;
+  if (!info || typeof info.wordCount !== "number" || !Array.isArray(metadata.chapters)) return null;
+  return {
+    bookInfo: { ...info, bookId, title: row.title, author: row.author ?? info.author ?? "" },
+    chapterInfo: { bookId, chapters: metadata.chapters }
+  };
+}
+
+function writeBookMetadata(bookInfo: BookInfoResponse, chapterInfo: ChapterInfoResponse): void {
+  const existing = db.prepare(`SELECT meta FROM book_cache WHERE book_id = ?`).get(bookInfo.bookId) as { meta: string } | undefined;
+  let previous: BookCacheMetadata = {};
+  try {
+    if (existing) previous = JSON.parse(existing.meta) as BookCacheMetadata;
+  } catch {
+    // 旧缓存元数据损坏时，用本次完整回包覆盖。
+  }
+  const metadata: BookCacheMetadata = {
+    ...previous,
+    category: bookInfo.category ?? previous.category,
+    bookInfo,
+    chapters: chapterInfo.chapters
+  };
+  const now = Math.floor(Date.now() / 1000);
+  db.prepare(
+    `INSERT INTO book_cache (book_id, title, author, meta, fetched_at)
+     VALUES (?, ?, ?, ?, ?)
+     ON CONFLICT(book_id) DO UPDATE SET title = excluded.title, author = excluded.author,
+       meta = excluded.meta, fetched_at = excluded.fetched_at`
+  ).run(bookInfo.bookId, bookInfo.title, bookInfo.author ?? "", JSON.stringify(metadata), now);
+}
+
+async function loadOrFetchBookMetadata(gateway: GatewayClient, bookId: string): Promise<BookMetadata> {
+  const cached = readBookMetadata(bookId);
+  if (cached) return cached;
+  const [bookInfo, chapterInfo] = await Promise.all([gateway.fetchBookInfo(bookId), gateway.fetchChapterInfo(bookId)]);
+  writeBookMetadata(bookInfo, chapterInfo);
+  return { bookInfo, chapterInfo };
+}
+
 function toRawReviews(response: ReviewListResponse): RawReview[] {
   return response.reviews.map((entry) => ({
     reviewId: entry.review.review.reviewId,
@@ -321,9 +382,8 @@ async function llmThemeCandidates(bandLabel: string, reviews: RawReview[]): Prom
 
 export async function buildCard(session: Session, bookId: string, intent: IntentResult): Promise<DecisionCard> {
   const gateway = decideGateway(session);
-  const [bookInfo, chapterInfo, bestBookmarks, recommendCached, negativeCached, neutralCached, similarRes] = await Promise.all([
-    gateway.fetchBookInfo(bookId),
-    gateway.fetchChapterInfo(bookId),
+  const [{ bookInfo, chapterInfo }, bestBookmarks, recommendCached, negativeCached, neutralCached, similarRes] = await Promise.all([
+    loadOrFetchBookMetadata(gateway, bookId),
     gateway.fetchBestBookmarks(bookId),
     fetchReviewListCachedWithDate(gateway, bookId, "recommend"),
     fetchReviewListCachedWithDate(gateway, bookId, "negative"),
@@ -610,6 +670,27 @@ export interface DecisionRecordInput {
   reason?: string;
 }
 
+export interface RejudgeDecisionInput {
+  action: DecisionRecordInput["action"];
+  trigger?: string;
+  reason?: string;
+}
+
+interface StoredDecisionPayload {
+  card: DecisionCard;
+  trigger?: string | null;
+  reason?: string | null;
+}
+
+interface DecisionRow {
+  id: number;
+  topic: string | null;
+  verdict: string;
+  action: string | null;
+  action_time: number | null;
+  card_json: string;
+}
+
 export function recordDecision(vid: string, input: DecisionRecordInput): void {
   const card = cardCache.get(input.cardId);
   if (!card) throw new Error("决策卡已过期（重启服务或超过缓存上限），请重新生成后再操作");
@@ -629,10 +710,105 @@ export function recordDecision(vid: string, input: DecisionRecordInput): void {
   );
 }
 
-export function listDecisions(vid: string): { id: number; topic: string; verdict: string; action: string; createdAt: number }[] {
-  return (
-    db
-      .prepare(`SELECT id, topic, verdict, action, created_at FROM decision_record WHERE vid = ? ORDER BY created_at DESC LIMIT 20`)
-      .all(vid) as { id: number; topic: string; verdict: string; action: string; created_at: number }[]
-  ).map((row) => ({ ...row, createdAt: row.created_at }));
+function decisionRows(vid: string): DecisionRow[] {
+  return db
+    .prepare(`SELECT id, topic, verdict, action, action_time, card_json FROM decision_record WHERE vid = ? ORDER BY id DESC`)
+    .all(vid) as DecisionRow[];
+}
+
+function parseStoredDecision(row: DecisionRow): StoredDecisionPayload | null {
+  try {
+    const payload = JSON.parse(row.card_json) as StoredDecisionPayload;
+    return payload.card?.cardId && payload.card.book?.bookId ? payload : null;
+  } catch {
+    return null;
+  }
+}
+
+export interface DecisionHistoryItem {
+  id: number;
+  cardId: string;
+  bookId: string;
+  title: string;
+  topic: string | null;
+  verdict: string;
+  action: string | null;
+  trigger: string | null;
+  reason: string | null;
+  createdAt: number;
+}
+
+export function listDecisions(vid: string): DecisionHistoryItem[] {
+  return decisionRows(vid)
+    .map((row) => {
+      const payload = parseStoredDecision(row);
+      if (!payload) return null;
+      return {
+        id: row.id,
+        cardId: payload.card.cardId,
+        bookId: payload.card.book.bookId,
+        title: payload.card.book.title,
+        topic: row.topic,
+        verdict: row.verdict,
+        action: row.action,
+        trigger: payload.trigger ?? null,
+        reason: payload.reason ?? null,
+        createdAt: row.action_time ?? 0
+      };
+    })
+    .filter((row): row is DecisionHistoryItem => row !== null)
+    .slice(0, 20);
+}
+
+export function rejudgeDecision(vid: string, recordId: number, input: RejudgeDecisionInput): void {
+  const row = db
+    .prepare(`SELECT id, topic, verdict, action, action_time, card_json FROM decision_record WHERE id = ? AND vid = ?`)
+    .get(recordId, vid) as DecisionRow | undefined;
+  const payload = row ? parseStoredDecision(row) : null;
+  if (!row || !payload) throw new Error("决策记录不存在");
+  const now = Math.floor(Date.now() / 1000);
+  db.prepare(
+    `INSERT INTO decision_record (vid, created_at, goal, topic, card_json, verdict, action, action_time)
+     SELECT vid, ?, goal, topic, ?, verdict, ?, ? FROM decision_record WHERE id = ? AND vid = ?`
+  ).run(
+    now,
+    JSON.stringify({ card: payload.card, trigger: input.trigger ?? null, reason: input.reason ?? null }),
+    input.action,
+    now,
+    recordId,
+    vid
+  );
+}
+
+export interface ReadingListItem {
+  recordId: number;
+  cardId: string;
+  bookId: string;
+  title: string;
+  author: string;
+  trigger: string | null;
+  updatedAt: number;
+}
+
+export function listReadingList(vid: string): ReadingListItem[] {
+  const seenBooks = new Set<string>();
+  const items: ReadingListItem[] = [];
+  for (const row of decisionRows(vid)) {
+    const payload = parseStoredDecision(row);
+    if (!payload) continue;
+    const book = payload.card.book;
+    if (seenBooks.has(book.bookId)) continue;
+    seenBooks.add(book.bookId);
+    if (row.action !== "shelve") continue;
+    items.push({
+      recordId: row.id,
+      cardId: payload.card.cardId,
+      bookId: book.bookId,
+      title: book.title,
+      author: book.author,
+      trigger: payload.trigger ?? null,
+      updatedAt: row.action_time ?? 0
+    });
+  }
+  return items;
 }

@@ -9,6 +9,7 @@ import { DecidePage } from "./pages/DecidePage";
 import { ReviewPage } from "./pages/ReviewPage";
 import { SettingsPage } from "./pages/SettingsPage";
 import { AccessPage } from "./pages/AccessPage";
+import { ReadingListPage } from "./pages/ReadingListPage";
 
 type AppPhase = "checking" | "access" | "setup" | "ready" | "error";
 
@@ -104,6 +105,8 @@ export function App() {
       <main className="app-main">
         {route === "/decide" ? (
           <DecidePage />
+        ) : route === "/reading-list" ? (
+          <ReadingListPage />
         ) : route === "/review" ? (
           <ReviewPage />
         ) : route === "/settings" ? (

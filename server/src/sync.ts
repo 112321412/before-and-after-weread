@@ -176,8 +176,11 @@ export function cacheShelfFromGateway(vid: string, shelf: ShelfSyncResponse, sid
   const upsertBook = db.prepare(`
     INSERT INTO book_cache (book_id, title, author, meta, cover_proxy_path, cover_remote_url, fetched_at)
     VALUES (?, ?, ?, ?, ?, ?, ?)
-    ON CONFLICT(book_id) DO UPDATE SET title = excluded.title, author = excluded.author,
-      cover_remote_url = excluded.cover_remote_url, fetched_at = excluded.fetched_at`);
+    ON CONFLICT(book_id) DO UPDATE SET
+      title = COALESCE(NULLIF(book_cache.title, ''), excluded.title),
+      author = COALESCE(NULLIF(book_cache.author, ''), excluded.author),
+      cover_remote_url = COALESCE(excluded.cover_remote_url, book_cache.cover_remote_url),
+      fetched_at = excluded.fetched_at`);
   const upsertShelf = db.prepare(`
     INSERT INTO shelf_snapshot
       (vid, book_id, progress, finished, abandoned, read_minutes, last_read_at, finished_at, archive, sort, sync_time)

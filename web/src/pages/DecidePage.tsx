@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { api } from "../api";
 import { toast } from "../components/Toast";
+import { resolveFollowupIntent } from "../intent";
 import {
   GOAL_LABELS,
   type Candidate,
@@ -33,14 +34,29 @@ export function DecidePage() {
     api.decisionHistory().then((result) => setHistory(result.decisions)).catch(() => undefined);
   }
 
+  async function rejudge(item: DecisionHistoryItem, action: "read_now" | "shelve" | "skip") {
+    try {
+      await api.rejudgeDecision({
+        recordId: item.id,
+        action,
+        trigger: action === "shelve" ? item.trigger ?? "时间宽裕时再读" : undefined
+      });
+      refreshHistory();
+      toast(`已追加改判：${item.title} · ${VERDICT_LABELS[action]}`);
+    } catch (err) {
+      toast(err instanceof Error ? err.message : "改判失败");
+    }
+  }
+
   useEffect(() => {
     refreshHistory();
   }, [stage]);
 
-  async function runIntent(text: string) {
+  async function runIntent(text: string, followup?: { previous: IntentResult; chip: string }) {
     setBusy(true);
     try {
-      const result = await api.decideIntent(text);
+      const parsed = await api.decideIntent(text);
+      const result = followup ? resolveFollowupIntent(parsed, followup.previous, followup.chip) : parsed;
       setIntent(result);
       if (result.mode === "ambiguous") {
         setStage("chips");
@@ -146,7 +162,12 @@ export function DecidePage() {
           <p>你想做的是哪一种？（选一个，只问这一轮）</p>
           <div className="chip-row">
             {intent.followupChips?.map((chip) => (
-              <button key={chip} type="button" className="chip" onClick={() => runIntent(`${intent.verbatim}，${chip}`)}>
+              <button
+                key={chip}
+                type="button"
+                className="chip"
+                onClick={() => runIntent(`${intent.verbatim}，${chip}`, { previous: intent, chip })}
+              >
                 {chip}
               </button>
             ))}
@@ -210,9 +231,19 @@ export function DecidePage() {
             {history.map((item) => (
               <li key={item.id}>
                 <span className={`verdict verdict-${item.verdict}`}>{VERDICT_LABELS[item.verdict] ?? item.verdict}</span>
-                <span className="history-topic">{item.topic}</span>
-                <span className="history-action">你的动作：{VERDICT_LABELS[item.action] ?? item.action}</span>
+                <span className="history-topic">{item.title || item.topic || "未命名书目"}</span>
+                <span className="history-action">你的动作：{item.action ? VERDICT_LABELS[item.action] ?? item.action : "未记录"}</span>
+                {item.trigger && <span className="history-action">触发条件：{item.trigger}</span>}
                 <span className="history-date">{formatDate(item.createdAt)}</span>
+                <span className="history-actions">
+                  {(["read_now", "shelve", "skip"] as const)
+                    .filter((action) => action !== item.action)
+                    .map((action) => (
+                      <button key={action} type="button" onClick={() => rejudge(item, action)}>
+                        改为{VERDICT_LABELS[action]}
+                      </button>
+                    ))}
+                </span>
               </li>
             ))}
           </ul>
@@ -306,7 +337,7 @@ function CandidateCard({
   );
 }
 
-function DecisionCardView({ card }: { card: DecisionCard; onActed: () => void }) {
+function DecisionCardView({ card, onActed }: { card: DecisionCard; onActed: () => void }) {
   const [acted, setActed] = useState<string | null>(null);
   const [trigger, setTrigger] = useState("");
   const [reason, setReason] = useState("");
@@ -324,6 +355,7 @@ function DecisionCardView({ card }: { card: DecisionCard; onActed: () => void })
         reason: action === "skip" && reason.trim() ? reason.trim() : undefined
       });
       setActed(action);
+      onActed();
       toast(`已归档：${card.book.title} · ${VERDICT_LABELS[action]}`);
     } catch (err) {
       toast(err instanceof Error ? err.message : "归档失败");
