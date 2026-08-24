@@ -1,5 +1,6 @@
 import { db } from "../db.js";
 import { generateJSON } from "../llm.js";
+import { isFinishedReading, readingSeconds } from "../reading.js";
 import type { Session } from "../sync.js";
 
 // F2.1 单书回顾：素材严格取自 highlight / thought / shelf_snapshot 三张表，
@@ -10,7 +11,56 @@ export interface Evidence {
   text: string;
   context: string | null; // 想法对应的划线原文（abstract）
   chapterUid: number | null;
+  chapterIdx: number | null;
+  chapterName: string | null;
+  colorStyle: number | null;
+  colorMeaning: string | null;
   createTime: number;
+}
+
+const COLOR_MEANINGS: Record<number, string> = {
+  0: "默认色",
+  1: "红色",
+  2: "紫色",
+  3: "蓝色",
+  4: "绿色",
+  5: "黄色"
+};
+
+export function colorMeaningFor(style: number | null): string | null {
+  if (style === null) return null;
+  return COLOR_MEANINGS[style] ?? `颜色样式 ${style}`;
+}
+
+export interface MyReview {
+  reviewId: string;
+  content: string;
+  abstract: string | null;
+  star: number;
+  isFinish: boolean;
+  chapterUid: number | null;
+  chapterIdx: number | null;
+  chapterName: string | null;
+  createTime: number;
+}
+
+export interface ReadingTraceChapter {
+  chapterUid: number | null;
+  chapterIdx: number | null;
+  chapterName: string | null;
+  highlightCount: number;
+  thoughtCount: number;
+  firstAt: number;
+  lastAt: number;
+  tempo: string;
+}
+
+export interface ReadingTrace {
+  currentProgress: number;
+  readMinutes: number;
+  finishedAt: string | null;
+  inference: string;
+  chapters: ReadingTraceChapter[];
 }
 
 export interface RecallSection {
@@ -33,6 +83,8 @@ export interface RecallDraft {
   sections: RecallSection[];
   evolution: EvolutionFact[];
   evidences: Evidence[];
+  myReviews: MyReview[];
+  readingTrace: ReadingTrace;
   meta: {
     progress: number;
     readMinutes: number;
@@ -58,8 +110,11 @@ interface ShelfRow {
 
 interface HighlightRow {
   range: string;
-  chapter_uid: number;
+  chapter_uid: number | null;
+  chapter_idx: number | null;
+  chapter_name: string | null;
   mark_text: string;
+  color_style: number | null;
   create_time: number;
 }
 
@@ -67,6 +122,12 @@ interface ThoughtRow {
   range: string;
   content: string;
   abstract: string | null;
+  review_id: string | null;
+  star: number;
+  is_finish: number;
+  chapter_uid: number | null;
+  chapter_idx: number | null;
+  chapter_name: string | null;
   create_time: number;
 }
 
@@ -80,16 +141,153 @@ export function loadBookMaterials(vid: string, bookId: string) {
     .get(vid, bookId) as ShelfRow | undefined;
   if (!shelf) throw new Error("书架上没有这本书，无法回顾");
   const highlights = db
-    .prepare(`SELECT range, chapter_uid, mark_text, create_time FROM highlight WHERE vid = ? AND book_id = ? ORDER BY create_time`)
+    .prepare(
+      `SELECT range, chapter_uid, chapter_idx, chapter_name, mark_text, color_style, create_time
+       FROM highlight WHERE vid = ? AND book_id = ? ORDER BY create_time`
+    )
     .all(vid, bookId) as HighlightRow[];
   const thoughts = db
-    .prepare(`SELECT range, content, abstract, create_time FROM thought WHERE vid = ? AND book_id = ? ORDER BY create_time`)
+    .prepare(
+      `SELECT range, content, abstract, review_id, star, is_finish, chapter_uid, chapter_idx, chapter_name, create_time
+       FROM thought WHERE vid = ? AND book_id = ? ORDER BY create_time`
+    )
     .all(vid, bookId) as ThoughtRow[];
   return { shelf, highlights, thoughts };
 }
 
 function toEvidence(highlight: HighlightRow): Evidence {
-  return { id: highlight.range, kind: "highlight", text: highlight.mark_text, context: null, chapterUid: highlight.chapter_uid, createTime: highlight.create_time };
+  return {
+    id: highlight.range,
+    kind: "highlight",
+    text: highlight.mark_text,
+    context: null,
+    chapterUid: highlight.chapter_uid,
+    chapterIdx: highlight.chapter_idx,
+    chapterName: highlight.chapter_name,
+    colorStyle: highlight.color_style,
+    colorMeaning: colorMeaningFor(highlight.color_style),
+    createTime: highlight.create_time
+  };
+}
+
+function toThoughtEvidence(thought: ThoughtRow): Evidence {
+  return {
+    id: thought.range,
+    kind: "thought",
+    text: thought.content,
+    context: thought.abstract,
+    chapterUid: thought.chapter_uid,
+    chapterIdx: thought.chapter_idx,
+    chapterName: thought.chapter_name,
+    colorStyle: null,
+    colorMeaning: null,
+    createTime: thought.create_time
+  };
+}
+
+function isWholeBookReview(thought: ThoughtRow): boolean {
+  return Boolean(thought.review_id) && thought.chapter_uid === null && thought.chapter_idx === null && thought.chapter_name === null;
+}
+
+function toMyReview(thought: ThoughtRow): MyReview {
+  return {
+    reviewId: thought.review_id ?? thought.range,
+    content: thought.content,
+    abstract: thought.abstract,
+    star: Number.isFinite(thought.star) ? thought.star : -1,
+    isFinish: thought.is_finish === 1,
+    chapterUid: thought.chapter_uid,
+    chapterIdx: thought.chapter_idx,
+    chapterName: thought.chapter_name,
+    createTime: thought.create_time
+  };
+}
+
+function dateOnly(timestamp: number | null | undefined): string | null {
+  if (!timestamp || !Number.isFinite(timestamp)) return null;
+  return new Date(timestamp * 1000).toISOString().slice(0, 10);
+}
+
+function normalizeProgress(progress: number): number {
+  const value = Number.isFinite(progress) ? progress : 0;
+  return Math.max(0, Math.min(100, value <= 1 ? value * 100 : value));
+}
+
+async function refreshBookProgress(session: Session, bookId: string, shelf: ShelfRow): Promise<ShelfRow> {
+  if (!session.gateway) return shelf;
+  try {
+    const response = await session.gateway.fetchBookProgress(bookId);
+    const finished = isFinishedReading(response.book);
+    const progress = normalizeProgress(response.book.progress);
+    const readMinutes = Math.max(0, Math.round(readingSeconds(response.book) / 60));
+    const lastReadAt = dateOnly(response.book.updateTime) ?? shelf.last_read_at;
+    const finishedAt = response.book.finishTime ? dateOnly(response.book.finishTime) : finished ? shelf.finished_at : null;
+    db.prepare(
+      `UPDATE shelf_snapshot
+       SET progress = ?, finished = ?, read_minutes = ?, last_read_at = ?, finished_at = ?
+       WHERE vid = ? AND book_id = ?`
+    ).run(progress, finished ? 1 : 0, readMinutes, lastReadAt, finishedAt, session.vid, bookId);
+    return { ...shelf, progress, finished: finished ? 1 : 0, read_minutes: readMinutes, last_read_at: lastReadAt, finished_at: finishedAt };
+  } catch {
+    // 回顾仍可使用已落库素材；进度接口失败不应阻塞读后整理。
+    return shelf;
+  }
+}
+
+function buildReadingTrace(shelf: ShelfRow, highlights: HighlightRow[], thoughts: ThoughtRow[]): ReadingTrace {
+  type MutableChapter = Omit<ReadingTraceChapter, "tempo">;
+  const chapters = new Map<string, MutableChapter>();
+  const add = (row: { chapter_uid: number | null; chapter_idx: number | null; chapter_name: string | null; create_time: number }, kind: "highlight" | "thought") => {
+    if (row.chapter_uid === null && row.chapter_idx === null && row.chapter_name === null) return;
+    const key = `${row.chapter_uid ?? ""}|${row.chapter_idx ?? ""}|${row.chapter_name ?? ""}`;
+    const existing = chapters.get(key);
+    if (existing) {
+      existing.highlightCount += kind === "highlight" ? 1 : 0;
+      existing.thoughtCount += kind === "thought" ? 1 : 0;
+      existing.firstAt = Math.min(existing.firstAt, row.create_time);
+      existing.lastAt = Math.max(existing.lastAt, row.create_time);
+      return;
+    }
+    chapters.set(key, {
+      chapterUid: row.chapter_uid,
+      chapterIdx: row.chapter_idx,
+      chapterName: row.chapter_name,
+      highlightCount: kind === "highlight" ? 1 : 0,
+      thoughtCount: kind === "thought" ? 1 : 0,
+      firstAt: row.create_time,
+      lastAt: row.create_time
+    });
+  };
+  highlights.forEach((row) => add(row, "highlight"));
+  thoughts.forEach((row) => add(row, "thought"));
+
+  const ordered = [...chapters.values()].sort((a, b) => {
+    if (a.chapterIdx !== null && b.chapterIdx !== null && a.chapterIdx !== b.chapterIdx) return a.chapterIdx - b.chapterIdx;
+    if (a.chapterIdx !== null) return -1;
+    if (b.chapterIdx !== null) return 1;
+    return a.firstAt - b.firstAt;
+  });
+  let previousLast: number | null = null;
+  const traceChapters = ordered.map((chapter, index) => {
+    let tempo = "首条章节痕迹";
+    if (index > 0 && previousLast !== null) {
+      if (chapter.firstAt < previousLast) {
+        tempo = "时间顺序与章节顺序不一致";
+      } else {
+        const gapDays = (chapter.firstAt - previousLast) / 86400;
+        tempo = gapDays <= 1 ? "连续推进" : gapDays <= 7 ? "短间隔推进" : "长间隔后继续";
+      }
+    }
+    previousLast = chapter.lastAt;
+    return { ...chapter, tempo };
+  });
+  return {
+    currentProgress: Math.round(shelf.progress),
+    readMinutes: shelf.read_minutes,
+    finishedAt: shelf.finished_at,
+    inference: "以下章节节奏仅根据你的划线与想法时间分布推断，不代表微信读书官方阅读历史。",
+    chapters: traceChapters
+  };
 }
 
 function monthDay(timestamp: number): string {
@@ -115,10 +313,12 @@ function detectEvolution(highlights: HighlightRow[], thoughts: ThoughtRow[]): Ev
 }
 
 export async function buildRecall(session: Session, bookId: string): Promise<RecallDraft> {
-  const { shelf, highlights, thoughts } = loadBookMaterials(session.vid, bookId);
+  const materials = loadBookMaterials(session.vid, bookId);
+  const { highlights, thoughts } = materials;
   if (highlights.length === 0 && thoughts.length === 0) {
     throw new Error("EMPTY_NOTES");
   }
+  const shelf = await refreshBookProgress(session, bookId, materials.shelf);
   const framework: RecallDraft["framework"] =
     shelf.finished === 1 ? "finished" : shelf.abandoned === 1 ? "abandoned" : "reading";
 
@@ -132,8 +332,10 @@ export async function buildRecall(session: Session, bookId: string): Promise<Rec
   };
   const evidences: Evidence[] = [
     ...highlights.map(toEvidence),
-    ...thoughts.map((t) => ({ id: t.range, kind: "thought" as const, text: t.content, context: t.abstract, chapterUid: null, createTime: t.create_time }))
+    ...thoughts.map(toThoughtEvidence)
   ];
+  const myReviews = thoughts.filter(isWholeBookReview).map(toMyReview);
+  const readingTrace = buildReadingTrace(shelf, highlights, thoughts);
   const evolution = detectEvolution(highlights, thoughts);
 
   const useLlm = process.env.WEREAD_MODE === "real" && Boolean(process.env.LLM_BASE_URL && process.env.LLM_API_KEY && process.env.LLM_MODEL);
@@ -156,6 +358,8 @@ export async function buildRecall(session: Session, bookId: string): Promise<Rec
     sections,
     evolution,
     evidences,
+    myReviews,
+    readingTrace,
     meta
   };
 }
@@ -179,6 +383,20 @@ function ruleSections(
   const reusable = highlights.filter((h) => /框架|方法|清单|时间预算|粒度|工具|边界条件/.test(h.mark_text));
 
   if (framework === "abandoned") {
+    if (highlights.length === 0) {
+      return [
+        {
+          title: titles[0],
+          paragraphs: ["没有找到划线时间线，只能确认这本书留下了想法而没有留下划线。"],
+          evidenceIds: []
+        },
+        {
+          title: titles[1],
+          paragraphs: [`你留下了 ${thoughts.length} 条想法；它们是当前可见的带走部分。`],
+          evidenceIds: thoughts.slice(0, 3).map((thought) => thought.range)
+        }
+      ];
+    }
     const first = highlights[0];
     const last = highlights[highlights.length - 1];
     const days = Math.max(1, Math.round((last.create_time - first.create_time) / 86400));
@@ -203,13 +421,14 @@ function ruleSections(
     ];
   }
 
-  const chapters = [...new Set(highlights.map((h) => h.chapter_uid))].sort((a, b) => a - b);
+  const chapters = [...new Set(highlights.map((h) => h.chapter_uid).filter((uid): uid is number => uid !== null))].sort((a, b) => a - b);
   const stage = framework === "reading" ? "到目前为止" : "全程";
+  const chapterSummary = chapters.length > 0 ? `集中在第 ${chapters.slice(0, 4).join("、")}${chapters.length > 4 ? " 等" : ""} 章` : "暂未记录章节信息";
   return [
     {
       title: titles[0],
       paragraphs: [
-        `${stage}共留下 ${highlights.length} 条划线，集中在第 ${chapters.slice(0, 4).join("、")}${chapters.length > 4 ? " 等" : ""} 章。`,
+        `${stage}共留下 ${highlights.length} 条划线，${chapterSummary}。`,
         "下面三条按时间顺序取自起点、中段与末段，作为收获的候选——是否成立，由你编辑定稿。"
       ],
       evidenceIds: pick(highlights, 3).map((h) => h.range)

@@ -16,6 +16,7 @@
     "check:key": "tsx scripts/check-key-guard.ts",
     "check:review-cache": "tsx scripts/check-review-cache.ts",
     "check:gateway-auth": "tsx scripts/check-gateway-auth-error.ts",
+    "check:f2-1": "tsx scripts/check-f2-1.ts",
     "preview": "vite preview web"
   },
   "dependencies": {

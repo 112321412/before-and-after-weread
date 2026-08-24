@@ -1,6 +1,6 @@
 import { db } from "../db.js";
 import { generateJSON } from "../llm.js";
-import type { Evidence, EvolutionFact } from "./recall.js";
+import { colorMeaningFor, type Evidence, type EvolutionFact } from "./recall.js";
 
 // F2.2 跨书主题整理：提问驱动，SQLite LIKE + 词元打分起步（不引向量库）。
 // 组织方式是 问题 → 主题 → 分歧/演变，不按书罗列摘抄。
@@ -45,6 +45,9 @@ interface Row {
   text: string;
   context: string | null;
   chapterUid: number | null;
+  chapterIdx: number | null;
+  chapterName: string | null;
+  colorStyle: number | null;
   createTime: number;
   bookTitle: string;
 }
@@ -59,9 +62,13 @@ function searchRows(vid: string, question: string): { rows: ScoredRow[]; terms: 
   const collect = (table: "highlight" | "thought") => {
     const sql =
       table === "highlight"
-        ? `SELECT h.range AS id, 'highlight' AS kind, h.mark_text AS text, NULL AS context, h.chapter_uid AS chapterUid, h.create_time AS createTime, c.title AS bookTitle
+        ? `SELECT h.range AS id, 'highlight' AS kind, h.mark_text AS text, NULL AS context, h.chapter_uid AS chapterUid,
+                  h.chapter_idx AS chapterIdx, h.chapter_name AS chapterName, h.color_style AS colorStyle,
+                  h.create_time AS createTime, c.title AS bookTitle
            FROM highlight h JOIN book_cache c ON c.book_id = h.book_id WHERE h.vid = ?`
-        : `SELECT t.range AS id, 'thought' AS kind, t.content AS text, t.abstract AS context, NULL AS chapterUid, t.create_time AS createTime, c.title AS bookTitle
+        : `SELECT t.range AS id, 'thought' AS kind, t.content AS text, t.abstract AS context, t.chapter_uid AS chapterUid,
+                  t.chapter_idx AS chapterIdx, t.chapter_name AS chapterName, NULL AS colorStyle,
+                  t.create_time AS createTime, c.title AS bookTitle
            FROM thought t JOIN book_cache c ON c.book_id = t.book_id WHERE t.vid = ?`;
     for (const row of db.prepare(sql).all(vid) as Row[]) {
       const hitTerms = terms.filter((term) => row.text.includes(term) || (row.context ?? "").includes(term));
@@ -82,6 +89,10 @@ export async function buildTheme(vid: string, question: string): Promise<ThemeRe
     text: row.text,
     context: row.context,
     chapterUid: row.chapterUid,
+    chapterIdx: row.chapterIdx,
+    chapterName: row.chapterName,
+    colorStyle: row.colorStyle,
+    colorMeaning: colorMeaningFor(row.colorStyle),
     createTime: row.createTime,
     bookTitle: row.bookTitle
   }));

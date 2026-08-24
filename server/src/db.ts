@@ -46,7 +46,10 @@ CREATE TABLE IF NOT EXISTS highlight (
   vid         TEXT NOT NULL,
   book_id     TEXT NOT NULL,
   chapter_uid INTEGER NOT NULL,
+  chapter_idx INTEGER,
+  chapter_name TEXT,
   mark_text   TEXT NOT NULL,
+  color_style INTEGER,
   range       TEXT NOT NULL,
   create_time INTEGER NOT NULL,
   PRIMARY KEY (vid, book_id, range)
@@ -56,6 +59,12 @@ CREATE TABLE IF NOT EXISTS thought (
   book_id     TEXT NOT NULL,
   content     TEXT NOT NULL,
   abstract    TEXT,
+  review_id   TEXT,
+  star        INTEGER NOT NULL DEFAULT -1,
+  is_finish   INTEGER NOT NULL DEFAULT 0,
+  chapter_uid INTEGER,
+  chapter_idx INTEGER,
+  chapter_name TEXT,
   range       TEXT NOT NULL,
   create_time INTEGER NOT NULL,
   PRIMARY KEY (vid, book_id, range)
@@ -99,8 +108,8 @@ const EXPECTED_COLUMNS: Record<string, string[]> = {
   user_settings: ["vid", "spoiler_level", "read_stats", "updated_at"],
   book_cache: ["book_id", "title", "author", "meta", "cover_proxy_path", "cover_remote_url", "cover_cache_file", "dominant_color", "palette", "fetched_at"],
   review_cache: ["book_id", "band", "reviews", "snapshot_date"],
-  highlight: ["vid", "book_id", "chapter_uid", "mark_text", "range", "create_time"],
-  thought: ["vid", "book_id", "content", "abstract", "range", "create_time"],
+  highlight: ["vid", "book_id", "chapter_uid", "chapter_idx", "chapter_name", "mark_text", "color_style", "range", "create_time"],
+  thought: ["vid", "book_id", "content", "abstract", "review_id", "star", "is_finish", "chapter_uid", "chapter_idx", "chapter_name", "range", "create_time"],
   shelf_snapshot: ["vid", "book_id", "progress", "finished", "abandoned", "read_minutes", "last_read_at", "finished_at", "archive", "sort", "note_sort", "sync_time"],
   speed_baseline: ["vid", "words_per_minute", "basis", "updated_at"],
   decision_record: ["id", "vid", "created_at", "goal", "topic", "card_json", "verdict", "action", "action_time"]
@@ -108,29 +117,42 @@ const EXPECTED_COLUMNS: Record<string, string[]> = {
 
 db.exec(SCHEMA_SQL);
 
-function findSchemaDrift(): string[] {
-  const drift: string[] = [];
+// 只做原地 additive migration。定义来自本文件常量，避免把旧库降级为重建/清空。
+const ADDITIVE_COLUMNS: Record<string, Record<string, string>> = {
+  user_settings: { spoiler_level: "TEXT NOT NULL DEFAULT 'none'", read_stats: "TEXT", updated_at: "INTEGER NOT NULL DEFAULT 0" },
+  book_cache: {
+    title: "TEXT NOT NULL DEFAULT ''", author: "TEXT", meta: "TEXT NOT NULL DEFAULT '{}'", cover_proxy_path: "TEXT",
+    cover_remote_url: "TEXT", cover_cache_file: "TEXT", dominant_color: "TEXT", palette: "TEXT", fetched_at: "INTEGER NOT NULL DEFAULT 0"
+  },
+  review_cache: { reviews: "TEXT NOT NULL DEFAULT '[]'", snapshot_date: "TEXT NOT NULL DEFAULT ''" },
+  highlight: { chapter_idx: "INTEGER", chapter_name: "TEXT", color_style: "INTEGER" },
+  thought: {
+    abstract: "TEXT", review_id: "TEXT", star: "INTEGER NOT NULL DEFAULT -1", is_finish: "INTEGER NOT NULL DEFAULT 0",
+    chapter_uid: "INTEGER", chapter_idx: "INTEGER", chapter_name: "TEXT"
+  },
+  shelf_snapshot: {
+    progress: "REAL NOT NULL DEFAULT 0", finished: "INTEGER NOT NULL DEFAULT 0", abandoned: "INTEGER NOT NULL DEFAULT 0",
+    read_minutes: "INTEGER NOT NULL DEFAULT 0", last_read_at: "TEXT", finished_at: "TEXT", archive: "TEXT",
+    sort: "INTEGER NOT NULL DEFAULT 0", note_sort: "INTEGER", sync_time: "INTEGER NOT NULL DEFAULT 0"
+  },
+  speed_baseline: { words_per_minute: "REAL NOT NULL DEFAULT 425", basis: "TEXT NOT NULL DEFAULT 'estimated'", updated_at: "INTEGER NOT NULL DEFAULT 0" },
+  decision_record: { created_at: "INTEGER NOT NULL DEFAULT 0", goal: "TEXT", topic: "TEXT", card_json: "TEXT NOT NULL DEFAULT '{}'", verdict: "TEXT NOT NULL DEFAULT 'skip'", action: "TEXT", action_time: "INTEGER" }
+};
+
+function migrateSchema(): void {
   for (const [table, expected] of Object.entries(EXPECTED_COLUMNS)) {
-    const actual = (db.prepare(`PRAGMA table_info(${table})`).all() as { name: string }[]).map((row) => row.name);
-    const missing = expected.filter((column) => !actual.includes(column));
-    if (missing.length > 0) drift.push(`${table} 缺少列 ${missing.join("、")}`);
+    const actual = new Set((db.prepare(`PRAGMA table_info(${table})`).all() as { name: string }[]).map((row) => row.name));
+    for (const column of expected) {
+      if (actual.has(column)) continue;
+      const definition = ADDITIVE_COLUMNS[table]?.[column];
+      if (!definition) throw new Error(`数据库缺少无法原地补齐的列：${table}.${column}`);
+      db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${definition}`);
+      actual.add(column);
+    }
   }
-  return drift;
 }
 
-const drift = findSchemaDrift();
-if (drift.length > 0) {
-  if (process.env.WEREAD_MODE === "real") {
-    throw new Error(
-      `数据库结构不兼容：${drift.join("；")}。real 模式不自动重建以免误删真实数据，请备份并删除 server/data 后重启。`
-    );
-  }
-  console.warn(`[weread-copilot] 库结构不兼容（${drift.join("；")}），mock 模式自动重建演示库`);
-  for (const table of Object.keys(EXPECTED_COLUMNS)) {
-    db.exec(`DROP TABLE IF EXISTS ${table}`);
-  }
-  db.exec(SCHEMA_SQL);
-}
+migrateSchema();
 
 const seedStmts = {
   book: db.prepare(`

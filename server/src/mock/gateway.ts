@@ -91,7 +91,8 @@ export function createMockGateway(): GatewayClient {
           markText: `${bookId} 的第 ${index} 条划线`,
           createTime: 1770000000 + index * DAY,
           type: 1,
-          range: `cf_${index}_${index * 100}`
+          range: `cf_${index}_${index * 100}`,
+          colorStyle: index
         })),
         chapters: [1, 2, 3].map((index) => ({ chapterUid: index, chapterIdx: index, title: `第${index}章` }))
       });
@@ -106,6 +107,10 @@ export function createMockGateway(): GatewayClient {
               abstract: `${bookId} 的第 ${index} 条划线`,
               range: `cf_${index}_${index * 100}`,
               chapterUid: index,
+              chapterIdx: index,
+              chapterName: `第${index}章`,
+              star: index === 1 ? 5 : 4,
+              isFinish: index === 1 ? 1 : 0,
               createTime: 1770000000 + index * DAY
             }
           })),
@@ -121,6 +126,8 @@ export function createMockGateway(): GatewayClient {
             review: {
               reviewId: `${bookId}-rv-3`,
               content: `${bookId} 的整本书评（无 range）`,
+              star: -1,
+              isFinish: 1,
               createTime: 1770000500
             }
           }

@@ -57,7 +57,11 @@ export interface MyReviewsResponse extends GatewayEnvelope {
       content: string;
       abstract?: string; // 想法对应的划线原文（书评/章节点评可能为空）
       range?: string;
+      star?: number; // 统一落库为 0-5；无星级为 -1
+      isFinish?: number | boolean;
       chapterUid?: number;
+      chapterIdx?: number;
+      chapterName?: string;
       createTime: number;
     };
   }[];

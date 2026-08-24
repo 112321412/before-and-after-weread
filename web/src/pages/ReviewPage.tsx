@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { api } from "../api";
 import { toast } from "../components/Toast";
-import type { RecallDraft, ReviewBookItem, ThemeResult } from "../types";
+import type { RecallDraft, RecallEvidence, ReviewBookItem, ThemeResult } from "../types";
 
 const GROUP_LABELS: Record<ReviewBookItem["group"], string> = {
   finished: "最近读完",
@@ -116,6 +116,52 @@ export function ReviewPage() {
             </p>
           </header>
 
+          <section className="recall-facts" aria-label="我的整本书评与星级">
+            <h3>我的整本书评与星级</h3>
+            {draft.myReviews.length === 0 ? (
+              <p className="recall-empty">没有找到你的整本书评。</p>
+            ) : (
+              <div className="recall-fact-list">
+                {draft.myReviews.map((review) => (
+                  <article key={review.reviewId} className="recall-fact">
+                    <p>{review.content || "未填写书评"}</p>
+                    <span>
+                      {reviewStarLabel(review.star)} · {review.isFinish ? "已标记读完" : "未标记读完"} · {formatMonthDay(review.createTime)}
+                    </span>
+                  </article>
+                ))}
+              </div>
+            )}
+          </section>
+
+          <section className="recall-trace" aria-label="阅读轨迹">
+            <h3>阅读轨迹</h3>
+            <p className="recall-inference">{draft.readingTrace.inference}</p>
+            <div className="recall-trace-summary">
+              <span>当前进度：{draft.readingTrace.currentProgress}%</span>
+              <span>累计时长：{formatMinutes(draft.readingTrace.readMinutes)}</span>
+              <span>读完时间：{draft.readingTrace.finishedAt ?? "未记录"}</span>
+            </div>
+            {draft.readingTrace.chapters.length === 0 ? (
+              <p className="recall-empty">暂无可用于章节节奏推断的划线或想法。</p>
+            ) : (
+              <div className="recall-trace-list">
+                {draft.readingTrace.chapters.map((chapter) => (
+                  <div
+                    key={`${chapter.chapterUid ?? ""}-${chapter.chapterIdx ?? ""}-${chapter.chapterName ?? ""}`}
+                    className="recall-trace-chapter"
+                  >
+                    <strong>{chapterLabel(chapter.chapterName, chapter.chapterIdx, chapter.chapterUid)}</strong>
+                    <span>
+                      划线 {chapter.highlightCount} · 想法 {chapter.thoughtCount} · {formatMonthDay(chapter.firstAt)}—
+                      {formatMonthDay(chapter.lastAt)} · {chapter.tempo}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </section>
+
           {draft.sections.map((section, sectionIndex) => {
             const range = sectionRanges[sectionIndex];
             return (
@@ -139,7 +185,8 @@ export function ReviewPage() {
                       <EvidenceQuote
                         key={id}
                         text={evidence.text}
-                        meta={quoteMeta(evidence.kind, evidence.chapterUid, evidence.createTime)}
+                        meta={quoteMeta(evidence)}
+                        context={evidence.context}
                         onRemove={() =>
                           setRemovedEvidence((current) => new Set(current).add(id))
                         }
@@ -164,7 +211,8 @@ export function ReviewPage() {
                         <EvidenceQuote
                           key={id}
                           text={evidence.text}
-                          meta={quoteMeta(evidence.kind, evidence.chapterUid, evidence.createTime)}
+                          meta={quoteMeta(evidence)}
+                          context={evidence.context}
                           onRemove={() => setRemovedEvidence((current) => new Set(current).add(id))}
                         />
                       ) : null;
@@ -238,7 +286,8 @@ export function ReviewPage() {
                         <EvidenceQuote
                           key={id}
                           text={evidence.text}
-                          meta={`《${evidence.bookTitle}》 · ${formatMonthDay(evidence.createTime)}`}
+                          meta={`《${evidence.bookTitle}》 · ${quoteMeta(evidence)}`}
+                          context={evidence.context}
                           onRemove={() => setThemeRemoved((current) => new Set(current).add(id))}
                         />
                       ) : null;
@@ -306,10 +355,21 @@ export function ReviewPage() {
   );
 }
 
-function EvidenceQuote({ text, meta, onRemove }: { text: string; meta: string; onRemove: () => void }) {
+function EvidenceQuote({
+  text,
+  meta,
+  context,
+  onRemove
+}: {
+  text: string;
+  meta: string;
+  context?: string | null;
+  onRemove: () => void;
+}) {
   return (
     <blockquote className="evidence-quote">
       <p>{text}</p>
+      {context ? <p className="evidence-context">对应原文：{context}</p> : null}
       <footer>
         {meta}
         <button type="button" className="quote-remove" onClick={onRemove}>
@@ -320,9 +380,29 @@ function EvidenceQuote({ text, meta, onRemove }: { text: string; meta: string; o
   );
 }
 
-function quoteMeta(kind: "highlight" | "thought", chapterUid: number | null, createTime: number): string {
-  const date = formatMonthDay(createTime);
-  return kind === "thought" ? `想法 · ${date}` : `第 ${chapterUid} 章 · ${date}`;
+function quoteMeta(evidence: Pick<RecallEvidence, "kind" | "chapterUid" | "chapterIdx" | "chapterName" | "colorMeaning" | "createTime">): string {
+  const date = formatMonthDay(evidence.createTime);
+  if (evidence.kind === "thought") {
+    const chapter = chapterLabel(evidence.chapterName, evidence.chapterIdx, evidence.chapterUid);
+    return `${chapter} · 想法 · ${date}`;
+  }
+  const chapter = chapterLabel(evidence.chapterName, evidence.chapterIdx, evidence.chapterUid);
+  return `${chapter} · 颜色：${evidence.colorMeaning ?? "未记录"} · ${date}`;
+}
+
+function chapterLabel(chapterName: string | null, chapterIdx: number | null, chapterUid: number | null): string {
+  return chapterName ?? (chapterIdx !== null ? `第 ${chapterIdx} 章` : chapterUid !== null ? `章节 ${chapterUid}` : "未记录章节");
+}
+
+function reviewStarLabel(star: number): string {
+  return star < 0 ? "未评分" : star === 0 ? "0 星" : `${"★".repeat(star)} ${star} 星`;
+}
+
+function formatMinutes(minutes: number): string {
+  const safe = Math.max(0, Math.round(minutes));
+  const hours = Math.floor(safe / 60);
+  const rest = safe % 60;
+  return hours > 0 ? `${hours} 小时 ${rest} 分钟` : `${rest} 分钟`;
 }
 
 function formatMonthDay(timestamp: number): string {
@@ -340,7 +420,7 @@ function buildRecallMarkdown(
   const evidenceLine = (id: string) => {
     const evidence = draft.evidences.find((entry) => entry.id === id);
     if (!evidence || removed.has(id)) return null;
-    const meta = quoteMeta(evidence.kind, evidence.chapterUid, evidence.createTime);
+    const meta = quoteMeta(evidence);
     return `> ${evidence.text}\n> —— ${meta}${evidence.context ? `（针对划线：${evidence.context}）` : ""}`;
   };
   const lines = [`# ${draft.title} · 单书札记`, ""];
@@ -365,6 +445,29 @@ function buildRecallMarkdown(
     draft.evolution.forEach((fact) => lines.push(`- ${fact.note}`));
     lines.push("");
   }
+  lines.push("## 我的整本书评与星级", "");
+  if (draft.myReviews.length === 0) {
+    lines.push("没有找到你的整本书评。", "");
+  } else {
+    draft.myReviews.forEach((review) => {
+      lines.push(
+        `- ${review.content || "未填写书评"}（${reviewStarLabel(review.star)} · ${review.isFinish ? "已标记读完" : "未标记读完"} · ${formatMonthDay(review.createTime)}）`,
+        ""
+      );
+    });
+  }
+  lines.push("## 阅读轨迹（推断）", "");
+  lines.push(
+    `当前进度：${draft.readingTrace.currentProgress}% · 累计时长：${formatMinutes(draft.readingTrace.readMinutes)} · 读完时间：${draft.readingTrace.finishedAt ?? "未记录"}`,
+    `说明：${draft.readingTrace.inference}`,
+    ""
+  );
+  draft.readingTrace.chapters.forEach((chapter) => {
+    lines.push(
+      `- ${chapterLabel(chapter.chapterName, chapter.chapterIdx, chapter.chapterUid)}：划线 ${chapter.highlightCount} · 想法 ${chapter.thoughtCount} · ${formatMonthDay(chapter.firstAt)}—${formatMonthDay(chapter.lastAt)} · ${chapter.tempo}`,
+      ""
+    );
+  });
   return lines.join("\n");
 }
 

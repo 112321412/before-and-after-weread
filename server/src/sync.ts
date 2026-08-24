@@ -114,7 +114,11 @@ async function paginateMyReviews(gateway: GatewayClient, bookId: string) {
     content: string;
     abstract?: string;
     range?: string;
+    star?: number;
+    isFinish?: number | boolean;
     chapterUid?: number;
+    chapterIdx?: number;
+    chapterName?: string;
     createTime: number;
   }[] = [];
   let synckey = 0;
@@ -135,20 +139,50 @@ export async function replaceBookNotes(vid: string, gateway: GatewayClient, entr
   ]);
   if (sid && !isSyncActive(sid)) return;
   const tx = db.transaction(() => {
+    const chapters = new Map(marks.chapters.map((chapter) => [chapter.chapterUid, chapter]));
     db.prepare(`DELETE FROM highlight WHERE vid = ? AND book_id = ?`).run(vid, entry.bookId);
     const insertHighlight = db.prepare(
-      `INSERT INTO highlight (vid, book_id, chapter_uid, mark_text, range, create_time) VALUES (?, ?, ?, ?, ?, ?)`
+      `INSERT INTO highlight
+       (vid, book_id, chapter_uid, chapter_idx, chapter_name, mark_text, color_style, range, create_time)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
     );
     for (const mark of marks.updated) {
-      insertHighlight.run(vid, entry.bookId, mark.chapterUid, mark.markText, mark.range, mark.createTime);
+      const chapter = chapters.get(mark.chapterUid);
+      insertHighlight.run(
+        vid,
+        entry.bookId,
+        mark.chapterUid,
+        chapter?.chapterIdx ?? null,
+        chapter?.title ?? null,
+        mark.markText,
+        mark.colorStyle ?? null,
+        mark.range,
+        mark.createTime
+      );
     }
     db.prepare(`DELETE FROM thought WHERE vid = ? AND book_id = ?`).run(vid, entry.bookId);
     const insertThought = db.prepare(
-      `INSERT INTO thought (vid, book_id, content, abstract, range, create_time) VALUES (?, ?, ?, ?, ?, ?)`
+      `INSERT INTO thought
+       (vid, book_id, content, abstract, review_id, star, is_finish, chapter_uid, chapter_idx, chapter_name, range, create_time)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
     );
     for (const review of reviews) {
       // 书评/章节点评没有 range，用 reviewId 兜住唯一键
-      insertThought.run(vid, entry.bookId, review.content, review.abstract ?? null, review.range ?? `review-${review.reviewId}`, review.createTime);
+      const chapter = review.chapterUid === undefined ? undefined : chapters.get(review.chapterUid);
+      insertThought.run(
+        vid,
+        entry.bookId,
+        review.content,
+        review.abstract ?? null,
+        review.reviewId,
+        normalizeReviewStar(review.star),
+        normalizeIsFinish(review.isFinish),
+        review.chapterUid ?? chapter?.chapterUid ?? null,
+        review.chapterIdx ?? chapter?.chapterIdx ?? null,
+        review.chapterName ?? chapter?.title ?? null,
+        review.range ?? `review-${review.reviewId}`,
+        review.createTime
+      );
     }
     setNoteSort(vid, entry.bookId, entry.sort, entry.readingProgress);
   });
@@ -401,6 +435,19 @@ export async function runFullSync(sid: string, session: Session, seedPage?: Note
   } catch {
     if (isSyncActive(sid)) errorState(sid);
   }
+}
+
+// /review/list/mine 的星级回包在历史版本里有 0-5 与 20-100 两种形状。
+export function normalizeReviewStar(value: unknown): number {
+  if (value === undefined || value === null || value === "") return -1;
+  const raw = Number(value);
+  if (!Number.isFinite(raw) || raw < 0) return -1;
+  const star = raw > 5 ? Math.round(raw / 20) : Math.round(raw);
+  return Math.max(0, Math.min(5, star));
+}
+
+function normalizeIsFinish(value: unknown): number {
+  return value === true || value === 1 || value === "1" || value === "true" ? 1 : 0;
 }
 
 // ---- 增量同步（F3.2：笔记概览 sort 对比，只重拉变化的书）----

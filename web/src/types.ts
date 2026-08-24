@@ -247,7 +247,42 @@ export interface RecallEvidence {
   text: string;
   context: string | null;
   chapterUid: number | null;
+  chapterIdx: number | null;
+  chapterName: string | null;
+  colorStyle: number | null;
+  colorMeaning: string | null;
   createTime: number;
+}
+
+export interface MyReview {
+  reviewId: string;
+  content: string;
+  abstract: string | null;
+  star: number;
+  isFinish: boolean;
+  chapterUid: number | null;
+  chapterIdx: number | null;
+  chapterName: string | null;
+  createTime: number;
+}
+
+export interface ReadingTraceChapter {
+  chapterUid: number | null;
+  chapterIdx: number | null;
+  chapterName: string | null;
+  highlightCount: number;
+  thoughtCount: number;
+  firstAt: number;
+  lastAt: number;
+  tempo: string;
+}
+
+export interface ReadingTrace {
+  currentProgress: number;
+  readMinutes: number;
+  finishedAt: string | null;
+  inference: string;
+  chapters: ReadingTraceChapter[];
 }
 
 export interface RecallSection {
@@ -270,6 +305,8 @@ export interface RecallDraft {
   sections: RecallSection[];
   evolution: EvolutionFact[];
   evidences: RecallEvidence[];
+  myReviews: MyReview[];
+  readingTrace: ReadingTrace;
   meta: {
     progress: number;
     readMinutes: number;

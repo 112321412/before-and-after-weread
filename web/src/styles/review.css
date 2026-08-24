@@ -94,6 +94,77 @@
   color: var(--ink-soft);
 }
 
+.recall-facts,
+.recall-trace {
+  margin: 18px 0 24px;
+  padding: 16px 18px;
+  border: 1px solid var(--rule);
+  border-radius: 9px;
+  background: color-mix(in srgb, var(--paper-deep) 35%, transparent);
+}
+
+.recall-facts h3,
+.recall-trace h3 {
+  margin: 0 0 10px;
+  font-size: 14.5px;
+  letter-spacing: 1px;
+  color: var(--accent);
+}
+
+.recall-empty {
+  margin: 0;
+  font-size: 13px;
+  color: var(--ink-soft);
+}
+
+.recall-fact-list,
+.recall-trace-list {
+  display: grid;
+  gap: 9px;
+}
+
+.recall-fact,
+.recall-trace-chapter {
+  padding: 10px 12px;
+  border-left: 2px solid var(--accent);
+  background: color-mix(in srgb, var(--ink) 4%, transparent);
+}
+
+.recall-fact p {
+  margin: 0 0 5px;
+  font-family: var(--serif);
+  font-size: 13.5px;
+  line-height: 1.75;
+}
+
+.recall-fact span,
+.recall-trace-chapter span {
+  font-size: 12px;
+  color: var(--ink-soft);
+}
+
+.recall-inference {
+  margin: 0 0 12px;
+  font-size: 12px;
+  line-height: 1.7;
+  color: var(--ink-soft);
+}
+
+.recall-trace-summary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 18px;
+  margin-bottom: 12px;
+  font-size: 13px;
+}
+
+.recall-trace-chapter {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px 14px;
+  align-items: baseline;
+}
+
 .recall-section {
   margin-bottom: 22px;
 }
@@ -160,6 +231,15 @@
 
 .quote-remove:hover {
   color: #e0a494;
+}
+
+.evidence-context {
+  margin: 6px 0 0;
+  padding-left: 10px;
+  border-left: 2px solid var(--rule);
+  font-size: 12px;
+  line-height: 1.7;
+  color: var(--ink-soft);
 }
 
 /* 跨书主题 */
