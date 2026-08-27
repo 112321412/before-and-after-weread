@@ -65,6 +65,14 @@ assert.equal(canShowReadingData(done, true, 0, true), false, "空书架不得伪
 assert.equal(canShowReadingData(error, true, 0, true), false, "同步错误不得显示伪造的 0 数据");
 assert.match(shelfState, /phase === "done" && booksLoaded && bookCount > 0/);
 
+// 页面按路由懒加载，包含 Three.js 的 ShelfPage 不应进入初始入口；加载态保持可访问且不伪造进度。
+for (const page of ["ShelfPage", "DecidePage", "ReviewPage", "ReadingListPage", "SettingsPage"]) {
+  assert.match(appSource, new RegExp(`lazy\\(\\(\\) =>\\s*import\\(\\"\\./pages/${page}\\"`), `${page} 必须懒加载`);
+  assert.doesNotMatch(appSource, new RegExp(`import\\s+\\{\\s*${page}\\s*\\}\\s+from`), `${page} 不应静态导入`);
+}
+assert.match(appSource, /<Suspense fallback=\{<RouteLoading \/>\}>/);
+assert.match(appSource, /role="status"/);
+
 // 主题作用域：只写 hero 的局部变量，应用外壳继续使用稳定令牌。
 assert.doesNotMatch(theme, /document\.documentElement/);
 assert.match(theme, /target\.style\.setProperty\("--shelf-paper"/);

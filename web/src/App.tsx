@@ -1,21 +1,32 @@
-import { useCallback, useEffect, useState } from "react";
+import { lazy, Suspense, useCallback, useEffect, useState } from "react";
 import { api, ACCESS_REQUIRED_EVENT, clearAccessToken, destroySessionAndClearSid, isAccessErrorCode } from "./api";
 import { useHashRoute } from "./router";
 import { TopNav, type SyncState } from "./components/TopNav";
 import { ToastHost } from "./components/Toast";
 import { SetupPage } from "./pages/SetupPage";
-import { ShelfPage } from "./pages/ShelfPage";
-import { DecidePage } from "./pages/DecidePage";
-import { ReviewPage } from "./pages/ReviewPage";
-import { SettingsPage } from "./pages/SettingsPage";
 import { AccessPage } from "./pages/AccessPage";
-import { ReadingListPage } from "./pages/ReadingListPage";
+
+const ShelfPage = lazy(() => import("./pages/ShelfPage").then(({ ShelfPage }) => ({ default: ShelfPage })));
+const DecidePage = lazy(() => import("./pages/DecidePage").then(({ DecidePage }) => ({ default: DecidePage })));
+const ReviewPage = lazy(() => import("./pages/ReviewPage").then(({ ReviewPage }) => ({ default: ReviewPage })));
+const SettingsPage = lazy(() => import("./pages/SettingsPage").then(({ SettingsPage }) => ({ default: SettingsPage })));
+const ReadingListPage = lazy(() =>
+  import("./pages/ReadingListPage").then(({ ReadingListPage }) => ({ default: ReadingListPage }))
+);
 
 type AppPhase = "checking" | "access" | "setup" | "ready" | "error";
 
 function isAccessError(error: unknown): boolean {
   const code = error && typeof error === "object" && "code" in error ? error.code : undefined;
   return typeof code === "string" && isAccessErrorCode(code);
+}
+
+function RouteLoading() {
+  return (
+    <div className="app-splash" role="status" aria-live="polite">
+      正在打开页面…
+    </div>
+  );
 }
 
 export function App() {
@@ -110,22 +121,24 @@ export function App() {
     <div className="app-shell">
       <TopNav route={route} onNavigate={navigate} syncState={syncState} syncNote={syncNote} />
       <main className="app-main">
-        {route === "/decide" ? (
-          <DecidePage />
-        ) : route === "/reading-list" ? (
-          <ReadingListPage />
-        ) : route === "/review" ? (
-          <ReviewPage />
-        ) : route === "/settings" ? (
-          <SettingsPage
-            onExit={() => {
-              navigate("/shelf");
-              setPhase("setup");
-            }}
-          />
-        ) : (
-          <ShelfPage onSyncStateChange={handleSyncStateChange} onChangeKey={handleChangeKey} />
-        )}
+        <Suspense fallback={<RouteLoading />}>
+          {route === "/decide" ? (
+            <DecidePage />
+          ) : route === "/reading-list" ? (
+            <ReadingListPage />
+          ) : route === "/review" ? (
+            <ReviewPage />
+          ) : route === "/settings" ? (
+            <SettingsPage
+              onExit={() => {
+                navigate("/shelf");
+                setPhase("setup");
+              }}
+            />
+          ) : (
+            <ShelfPage onSyncStateChange={handleSyncStateChange} onChangeKey={handleChangeKey} />
+          )}
+        </Suspense>
       </main>
       <ToastHost />
     </div>
