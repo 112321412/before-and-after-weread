@@ -32,7 +32,7 @@
 本项目的网关封装**唯一真相来源**是本地已安装的 skill：
 
 ```
-C:\Users\Wenjie\.agents\skills\weread-skills\
+.agents/skills/weread-skills/
 ├── SKILL.md         统一入口规范：POST https://i.weread.qq.com/api/agent/gateway
 │                    Authorization: Bearer <wrk-key>；body 参数平铺 + skill_version "1.0.4"
 ├── search.md        /store/search（scope=10 电子书 / 13 书单 / 12 全文…）
