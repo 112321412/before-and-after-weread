@@ -30,7 +30,33 @@ npm run dev
 | mock（默认） | `npm run dev` | 12 本虚构中文书，封面由服务端动态生成 SVG（`/api/cover/:bookId`），调色板从封面底色推导 |
 | real | PowerShell：`$env:WEREAD_MODE='real'; npm run dev`<br>POSIX：`WEREAD_MODE=real npm run dev` | 微信读书 Agent API Gateway（`POST https://i.weread.qq.com/api/agent/gateway`，Bearer key，参数平铺 + `skill_version: "1.0.4"`）。封面由服务端代理，主色由服务端提取后写入本地书籍缓存 |
 
+`.env.example` 只提供变量清单，项目不会自动加载 `.env` 或该示例文件；请在当前 shell 或托管平台设置变量。以下是只含占位值的真实模式启动示例：
+
+PowerShell：
+
+```powershell
+$env:WEREAD_MODE='real'
+$env:WEREAD_ACCESS_PASSWORD='replace-with-access-password'
+$env:LLM_BASE_URL='https://provider.example/v1'
+$env:LLM_API_KEY='replace-with-provider-key'
+$env:LLM_MODEL='replace-with-model-name'
+npm run dev
+```
+
+POSIX shell：
+
+```bash
+export WEREAD_MODE=real
+export WEREAD_ACCESS_PASSWORD=replace-with-access-password
+export LLM_BASE_URL=https://provider.example/v1
+export LLM_API_KEY=replace-with-provider-key
+export LLM_MODEL=replace-with-model-name
+npm run dev
+```
+
 真实模式在 Key 配置门输入微信读书 API Key：服务端调 `/user/notebooks` 验证 → 建会话并立即返回 → 后台跑全量同步（笔记本翻页 → 书架 → 划线/想法并发 ≤8 → 封面批量取主色 → readdata 周分桶 → 速度基线），前端轮询 `GET /api/sync/progress`，在书架 hero 中心环显示真实百分比与阶段；TopNav 只显示一般同步状态。之后每次进入书架页做增量同步（笔记概览 sort 对比，只重拉变化的书）。Key 只存服务端会话内存，不落盘、不写日志。
+
+未配置 `LLM_BASE_URL`、`LLM_API_KEY`、`LLM_MODEL` 时，决策卡与读后整理使用规则降级态；配置齐全时才调用 OpenAI-compatible `/chat/completions`。`npm run check:llm` 使用本地临时 HTTP server 验证适配器，不等同于真实供应商调用通过。
 
 无 key 时可用 `server/src/mock/gateway.ts`（实现 GatewayClient 接口的内存网关）空跑整条同步管道自检。
 
@@ -42,7 +68,7 @@ npm run dev
 | `npm run dev:server` | 只起服务端（8787） |
 | `npm run dev:web` | 只起前端（5173） |
 | `npm run build` | server 与 web 的 tsc 全量类型检查 + Vite 产物构建（`web/dist/`） |
-| `npm run check:*` | 运行全部自动检查；包含同步基线、账户/访问控制、决策候选与真实口径 fixture、书评缓存、认证错误、F2.1 回顾列表映射与视觉/F2.2/F2.3 回归 |
+| `npm run check` | 一键运行全部自动检查；包含同步基线、账户/访问控制、LLM 适配器、决策候选与真实口径 fixture、书评缓存、认证错误、F2.1 回顾列表映射与视觉/F2.2/F2.3 回归 |
 
 ## 目录
 

@@ -15,10 +15,12 @@
     "check:decision-history": "tsx scripts/check-decision-history.ts",
     "check:access": "tsx scripts/check-access.ts",
     "check:key": "tsx scripts/check-key-guard.ts",
+    "check:llm": "tsx scripts/check-llm.ts",
     "check:review-cache": "tsx scripts/check-review-cache.ts",
     "check:gateway-auth": "tsx scripts/check-gateway-auth-error.ts",
     "check:f2-1": "tsx scripts/check-f2-1.ts",
     "check:visual": "tsx scripts/check-visual-iteration.ts",
+    "check": "npm run check:reading && npm run check:account && npm run check:decision && npm run check:decision-real && npm run check:decision-history && npm run check:access && npm run check:key && npm run check:llm && npm run check:review-cache && npm run check:gateway-auth && npm run check:f2-1 && npm run check:visual",
     "preview": "vite preview web"
   },
   "dependencies": {

@@ -30,7 +30,7 @@ async function callOnce(system: string, user: string): Promise<string> {
       response_format: { type: "json_object" }
     })
   });
-  if (!res.ok) throw new Error(`LLM 请求失败：HTTP ${res.status} ${await res.text()}`.slice(0, 300));
+  if (!res.ok) throw new Error(`LLM 请求失败：HTTP ${res.status}`);
   const body = (await res.json()) as ChatCompletionResponse;
   const content = body.choices?.[0]?.message?.content;
   if (!content) throw new Error("LLM 返回为空");

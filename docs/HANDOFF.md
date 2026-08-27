@@ -24,7 +24,7 @@
 | 真实模式 | 真实完整用户旅程已由浏览器终验；写路径按数据保护约束未触发 | ✅ 真实完整旅程通过；写路径由自动化检查覆盖 |
 
 - 关键 Git 快照：`125a968`（Key 门安全）→ `99e2575`（书评缓存）→ `4551d14`（非空 Key 校验）→ `6e59649`（认证错误诊断）→ `c56ebd3`（访问口令）→ `613a496`（同步隔离）→ `ab58182`（决策历史）→ `c7f8813`（F2.1 单书回顾）→ `9fbad6c`（v1.3 视觉实现基线）→ `121e3c5`（错误态双动作）→ `fc0adb1`（真实口径与回顾列表修复）；本轮真实浏览器终验已通过。
-- `npm run check:*` 全部通过，`npm run build` 零错误；视觉检查还覆盖 F2.2/F2.3 回归，新增真实形状与回顾列表映射检查。dev 命令带端口自清理（`scripts/free-port.js`）。
+- `npm run check` 聚合的全部自动检查通过，`npm run build` 零错误；其中包含本地 OpenAI-compatible LLM 适配器检查。视觉检查还覆盖 F2.2/F2.3 回归，新增真实形状与回顾列表映射检查。dev 命令带端口自清理（`scripts/free-port.js`）。
 - 当前运行：监督已启动的预览服务（5173/8787），本轮不重启、不终止。
 
 ## 3. 微信读书 Skill —— API 权威文档（重要）
@@ -57,7 +57,7 @@
 | 前端 | Vite + React 18 + TS + three@0.165；原生 CSS 变量体系；无 UI/chart 库 |
 | 服务端 | Node 22 + Express(tsx) + better-sqlite3 + sharp |
 | 命令 | `npm run dev`（mock 默认）；真实模式：PowerShell `$env:WEREAD_MODE='real'; npm run dev` / POSIX `WEREAD_MODE=real npm run dev`（Key 在浏览器 Key 门输入）；`npm run build` |
-| LLM | `LLM_BASE_URL`/`LLM_API_KEY`/`LLM_MODEL`（OpenAI 兼容）；未配置→degraded 规则态，卡面明示 |
+| LLM | `LLM_BASE_URL`/`LLM_API_KEY`/`LLM_MODEL`（OpenAI 兼容）；未配置→degraded 规则态，卡面明示；`check:llm` 仅验证本地兼容接口，真实供应商调用仍需部署环境自行配置 |
 
 ## 5. 目录结构与数据库（现状）
 
