@@ -28,7 +28,7 @@ npm run dev
 | 模式 | 启动方式 | 数据来源 |
 |---|---|---|
 | mock（默认） | `npm run dev` | 12 本虚构中文书，封面由服务端动态生成 SVG（`/api/cover/:bookId`），调色板从封面底色推导 |
-| real | `WEREAD_MODE=real npm run dev:server` | 微信读书 Agent API Gateway（`POST https://i.weread.qq.com/api/agent/gateway`，Bearer key，参数平铺 + `skill_version: "1.0.4"`）。封面由服务端代理拉取并落盘缓存（`server/data/covers/`），主色用 sharp 提取后写回 `book_cache` |
+| real | PowerShell：`$env:WEREAD_MODE='real'; npm run dev`<br>POSIX：`WEREAD_MODE=real npm run dev` | 微信读书 Agent API Gateway（`POST https://i.weread.qq.com/api/agent/gateway`，Bearer key，参数平铺 + `skill_version: "1.0.4"`）。封面由服务端代理，主色由服务端提取后写入本地书籍缓存 |
 
 真实模式在 Key 配置门输入微信读书 API Key：服务端调 `/user/notebooks` 验证 → 建会话并立即返回 → 后台跑全量同步（笔记本翻页 → 书架 → 划线/想法并发 ≤8 → 封面批量取主色 → readdata 周分桶 → 速度基线），前端轮询 `GET /api/sync/progress`，在书架 hero 中心环显示真实百分比与阶段；TopNav 只显示一般同步状态。之后每次进入书架页做增量同步（笔记概览 sort 对比，只重拉变化的书）。Key 只存服务端会话内存，不落盘、不写日志。
 
@@ -48,7 +48,7 @@ npm run dev
 
 ```
 weread/
-  docs/                 PRD 与参考源码（勿动）
+  docs/                 PRD、决策卡 spec、交接文档与参考页面
   server/
     src/
       index.ts          Express 入口：会话 + 同步进度 + 书架/统计/封面路由

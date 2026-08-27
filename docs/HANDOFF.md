@@ -56,7 +56,7 @@ C:\Users\Wenjie\.agents\skills\weread-skills\
 |---|---|
 | 前端 | Vite + React 18 + TS + three@0.165；原生 CSS 变量体系；无 UI/chart 库 |
 | 服务端 | Node 22 + Express(tsx) + better-sqlite3 + sharp |
-| 命令 | `npm run dev`（mock 默认）；`WEREAD_MODE=real npm run dev`（真实模式，key 在浏览器 Key门输入）；`npm run build` |
+| 命令 | `npm run dev`（mock 默认）；真实模式：PowerShell `$env:WEREAD_MODE='real'; npm run dev` / POSIX `WEREAD_MODE=real npm run dev`（Key 在浏览器 Key 门输入）；`npm run build` |
 | LLM | `LLM_BASE_URL`/`LLM_API_KEY`/`LLM_MODEL`（OpenAI 兼容）；未配置→degraded 规则态，卡面明示 |
 
 ## 5. 目录结构与数据库（现状）
@@ -110,12 +110,11 @@ scripts/check-visual-iteration.ts 视觉门控、主题作用域、F2.2/F2.3 回
 
 **当前合理边界**：
 - 未配置 LLM 时，决策卡与读后整理保持规则降级态；这是预期降级，不代表真实同步失败。
-- 本轮真实浏览器仅验证只读旅程与入口状态；上述写路径继续以自动化检查作为验收证据，避免改动用户数据。
+- 本轮真实浏览器已完成只读点击旅程与入口状态；上述写路径继续以自动化检查作为验收证据，避免改动用户数据。
 
 当前 5173/8787 预览服务由监督保持运行，本阶段不要求重启。
 
 **已知遗留**（不阻塞本阶段）：
-- 内置浏览器点击自动化此前不稳定，读后页生成草稿与决策卡动作仍需监督人工点击确认。
 - 决策卡缓存为内存 Map（上限 30，重启失效）。
 - 主题检索 2-gram 打分召回不了同义词——二期升级点。
 
