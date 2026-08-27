@@ -1,0 +1,47 @@
+{
+  "name": "weread-copilot",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "concurrently -n server,web -c blue,green \"npm:dev:server\" \"npm:dev:web\"",
+    "dev:server": "node scripts/free-port.js 8787 && tsx watch server/src/index.ts",
+    "dev:web": "node scripts/free-port.js 5173 && vite serve web --port 5173",
+    "build": "tsc -p server --noEmit && tsc -p web --noEmit && vite build web",
+    "check:reading": "tsx scripts/check-reading-baseline.ts",
+    "check:account": "tsx scripts/check-account-data.ts",
+    "check:decision": "tsx scripts/check-decision-candidates.ts",
+    "check:decision-real": "tsx scripts/check-decision-real-shape.ts",
+    "check:decision-history": "tsx scripts/check-decision-history.ts",
+    "check:access": "tsx scripts/check-access.ts",
+    "check:key": "tsx scripts/check-key-guard.ts",
+    "check:llm": "tsx scripts/check-llm.ts",
+    "check:review-cache": "tsx scripts/check-review-cache.ts",
+    "check:gateway-auth": "tsx scripts/check-gateway-auth-error.ts",
+    "check:f2-1": "tsx scripts/check-f2-1.ts",
+    "check:visual": "tsx scripts/check-visual-iteration.ts",
+    "check": "npm run check:reading && npm run check:account && npm run check:decision && npm run check:decision-real && npm run check:decision-history && npm run check:access && npm run check:key && npm run check:llm && npm run check:review-cache && npm run check:gateway-auth && npm run check:f2-1 && npm run check:visual",
+    "preview": "vite preview web"
+  },
+  "dependencies": {
+    "better-sqlite3": "^11.10.0",
+    "express": "^4.19.2",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "sharp": "^0.35.3",
+    "three": "^0.165.0"
+  },
+  "devDependencies": {
+    "@types/better-sqlite3": "^7.6.11",
+    "@types/express": "^4.17.21",
+    "@types/node": "^22.5.0",
+    "@types/react": "^18.3.5",
+    "@types/react-dom": "^18.3.0",
+    "@types/three": "^0.165.0",
+    "@vitejs/plugin-react": "^4.3.4",
+    "concurrently": "^8.2.2",
+    "tsx": "^4.19.0",
+    "typescript": "^5.5.4",
+    "vite": "^5.4.2"
+  }
+}

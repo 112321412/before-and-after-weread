@@ -1,0 +1,668 @@
+/* 选书决策页：渐进式单页 */
+
+.decide-page {
+  max-width: 1180px;
+  margin: 0 auto;
+  padding: 120px 36px 90px;
+}
+
+.decide-header h1 {
+  margin: 0 0 8px;
+  font-size: 30px;
+  letter-spacing: 2px;
+}
+
+.decide-lede {
+  margin: 0 0 30px;
+  font-family: var(--serif);
+  font-size: 14.5px;
+  color: var(--ink-soft);
+}
+
+.decide-goal-tag {
+  display: inline-block;
+  margin-left: 12px;
+  padding: 2px 10px;
+  font-size: 12px;
+  font-family: var(--sans);
+  border: 1px solid var(--rule);
+  border-radius: 999px;
+  color: var(--accent);
+}
+
+.decide-input-row {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+}
+
+.decide-input-row input {
+  flex: 1;
+  padding: 13px 16px;
+  font: inherit;
+  font-size: 14.5px;
+  color: var(--ink);
+  background: color-mix(in srgb, var(--ink) 6%, transparent);
+  border: 1px solid var(--rule);
+  border-radius: 8px;
+}
+
+.decide-input-row input:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+.decide-input-row button[type="submit"],
+.candidate-actions .primary {
+  padding: 13px 26px;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--paper-deep);
+  background: var(--accent);
+  border-radius: 8px;
+}
+
+.decide-input-row button:disabled,
+.candidate-actions .primary:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.decide-example,
+.decide-link-btn {
+  font-size: 13px;
+  color: var(--ink-soft);
+  border-bottom: 1px dashed var(--rule);
+}
+
+/* 追问 chips */
+
+.decide-chips p {
+  margin: 0 0 14px;
+  font-size: 14.5px;
+}
+
+.chip-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-bottom: 16px;
+}
+
+.chip {
+  padding: 8px 16px;
+  font-size: 13.5px;
+  border: 1px solid var(--rule);
+  border-radius: 999px;
+  transition: border-color 200ms var(--ease-out), color 200ms var(--ease-out);
+}
+
+.chip:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+/* 候选圈定 */
+
+.candidates-meta {
+  margin: 0 0 16px;
+  font-size: 12.5px;
+  color: var(--ink-soft);
+}
+
+.candidate-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(210px, 1fr));
+  gap: 14px;
+  margin-bottom: 20px;
+}
+
+.candidate-card {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 16px 16px 12px;
+  text-align: left;
+  border: 1px solid var(--rule);
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--paper-deep) 45%, transparent);
+  transition: border-color 200ms var(--ease-out), transform 200ms var(--ease-out);
+}
+
+.candidate-card:hover {
+  transform: translateY(-2px);
+}
+
+.candidate-card.checked {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 1px var(--accent) inset;
+}
+
+.candidate-title-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.candidate-title-row strong {
+  font-size: 15px;
+}
+
+.candidate-rating {
+  font-size: 13px;
+  color: var(--accent);
+  font-variant-numeric: tabular-nums;
+}
+
+.candidate-intro {
+  margin: 0;
+  font-size: 12.5px;
+  line-height: 1.7;
+  color: var(--ink-soft);
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.candidate-foot {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  font-size: 11.5px;
+  color: var(--ink-soft);
+  margin-top: auto;
+}
+
+.candidate-dup {
+  color: var(--accent);
+}
+
+.candidate-actions {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+}
+
+.candidate-actions button:not(.primary) {
+  padding: 11px 18px;
+  font-size: 13.5px;
+  border: 1px solid var(--rule);
+  border-radius: 8px;
+  color: var(--ink-soft);
+}
+
+.candidate-actions button:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+/* 生成进度 */
+
+.decide-generating {
+  padding: 40px 0;
+  font-size: 15px;
+}
+
+.decide-generating .decide-sub {
+  margin-top: 8px;
+  font-size: 12.5px;
+  color: var(--ink-soft);
+}
+
+/* 决策卡横排 */
+
+.decide-cards {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 20px;
+  align-items: stretch;
+}
+
+.decision-card {
+  flex: 1 1 370px;
+  min-width: 340px;
+  max-width: 560px;
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--rule);
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--paper-deep) 55%, transparent);
+  padding: 22px 22px 18px;
+  transition: background-color 720ms var(--ease-out), border-color 720ms var(--ease-out);
+}
+
+.dc-title-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+}
+
+.dc-title-row h3 {
+  margin: 0;
+  font-size: 19px;
+  letter-spacing: 1px;
+}
+
+.dc-one-liner {
+  margin: 10px 0 14px;
+  font-family: var(--serif);
+  font-size: 14px;
+  color: var(--ink);
+}
+
+/* verdict 徽章：PRD 固定色，不随动态调色板变化 */
+.verdict {
+  flex: none;
+  padding: 4px 12px;
+  font-size: 12.5px;
+  border-radius: 999px;
+  color: #fff;
+}
+
+.verdict-read_now {
+  background: #2f4a7d;
+}
+
+.verdict-shelve {
+  background: #b8862f;
+  color: #fff;
+}
+
+.verdict-skip {
+  background: #8b9096;
+}
+
+.dc-trio {
+  display: flex;
+  gap: 26px;
+  padding: 12px 14px;
+  border: 1px solid var(--rule);
+  border-radius: 8px;
+  margin-bottom: 6px;
+}
+
+.dc-trio > div {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.dc-trio-label {
+  font-size: 11px;
+  letter-spacing: 1px;
+  color: var(--ink-soft);
+}
+
+.dc-trio strong {
+  font-size: 15px;
+}
+
+.dc-divergence {
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.5;
+}
+
+.dc-trio-sub {
+  font-size: 11.5px;
+  color: var(--ink-soft);
+}
+
+.dc-trigger {
+  margin: 8px 0 0;
+  font-size: 12.5px;
+  color: var(--accent);
+}
+
+/* 折叠分块 */
+
+.dc-block {
+  border-top: 1px solid var(--rule);
+  padding: 10px 2px;
+}
+
+.dc-block summary {
+  cursor: pointer;
+  font-size: 13.5px;
+  font-weight: 600;
+  color: var(--ink-soft);
+  list-style-position: inside;
+}
+
+.dc-block[open] summary {
+  color: var(--ink);
+}
+
+.dc-body {
+  padding: 10px 4px 4px;
+  font-size: 13px;
+  line-height: 1.9;
+}
+
+.dc-body p {
+  margin: 0 0 6px;
+}
+
+.dc-meta {
+  font-size: 12px;
+  color: var(--ink-soft);
+}
+
+.dc-warning {
+  color: #e0a494;
+}
+
+.dc-recall {
+  padding: 6px 10px;
+  border-left: 3px solid var(--accent);
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+  border-radius: 0 6px 6px 0;
+}
+
+.relation {
+  display: inline-block;
+  margin-right: 6px;
+  padding: 1px 8px;
+  font-size: 11.5px;
+  border: 1px solid var(--rule);
+  border-radius: 999px;
+}
+
+.relation-重复 {
+  color: #e0a494;
+  border-color: rgba(224, 164, 148, 0.5);
+}
+
+.dc-theme {
+  margin: 6px 0;
+}
+
+.dc-theme summary {
+  cursor: pointer;
+  font-size: 13px;
+  color: var(--ink);
+}
+
+.dc-theme-count {
+  font-size: 11.5px;
+  color: var(--ink-soft);
+}
+
+.dc-themes.negative .dc-theme summary {
+  color: #e0a494;
+}
+
+.dc-singles {
+  margin-top: 10px;
+}
+
+.dc-spoiler-note {
+  margin: 8px 2px;
+  font-size: 12px;
+  color: var(--ink-soft);
+}
+
+.dc-foldable-mark summary {
+  cursor: pointer;
+  font-size: 12px;
+  color: var(--ink-soft);
+  margin: 6px 0;
+}
+
+/* 证据引文块：暖黄荧光高亮 + 左竖线 + 衬线（呼应微信读书“划线”） */
+.evidence-quote {
+  margin: 8px 0;
+  padding: 8px 12px;
+  border-left: 3px solid var(--accent);
+  border-radius: 0 6px 6px 0;
+  background: linear-gradient(to top, transparent 52%, rgba(217, 164, 65, 0.32) 52%);
+}
+
+.evidence-quote p {
+  margin: 0;
+  font-family: var(--serif);
+  font-size: 13px;
+  line-height: 1.8;
+}
+
+.evidence-quote footer {
+  margin-top: 4px;
+  font-size: 11px;
+  color: var(--ink-soft);
+}
+
+.quote-finish,
+.quote-weight {
+  margin-left: 8px;
+  padding: 1px 6px;
+  border-radius: 4px;
+  font-size: 10.5px;
+}
+
+.quote-finish {
+  border: 1px solid var(--rule);
+}
+
+.quote-weight {
+  color: #e0a494;
+  border: 1px solid rgba(224, 164, 148, 0.5);
+}
+
+.dc-gate {
+  font-size: 12.5px;
+  color: var(--ink-soft);
+}
+
+.dc-gate::before {
+  content: "▸ ";
+  color: var(--accent);
+}
+
+/* 存疑区 */
+
+.dc-open-questions {
+  margin-top: 10px;
+  padding: 12px 14px;
+  border: 1px dashed var(--rule);
+  border-radius: 8px;
+  font-size: 12.5px;
+  line-height: 1.9;
+  color: var(--ink-soft);
+}
+
+.dc-open-questions strong {
+  display: block;
+  margin-bottom: 4px;
+  color: var(--ink);
+}
+
+/* 动作区 */
+
+.dc-actions {
+  display: flex;
+  gap: 10px;
+  margin-top: 16px;
+}
+
+.dc-actions button {
+  flex: 1;
+  padding: 10px 0;
+  font-size: 13.5px;
+  border-radius: 8px;
+  border: 1px solid transparent;
+  transition: filter 200ms var(--ease-out);
+}
+
+.dc-actions button:hover:not(:disabled) {
+  filter: brightness(1.1);
+}
+
+.dc-actions button:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+
+.act-read_now {
+  background: #2f4a7d;
+  color: #fff;
+}
+
+.act-shelve {
+  background: #b8862f;
+  color: #fff;
+}
+
+.act-skip {
+  background: transparent;
+  border-color: #8b9096 !important;
+  color: var(--ink-soft);
+}
+
+.dc-action-inputs {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.dc-action-inputs input {
+  padding: 9px 12px;
+  font: inherit;
+  font-size: 12.5px;
+  color: var(--ink);
+  background: color-mix(in srgb, var(--ink) 5%, transparent);
+  border: 1px solid var(--rule);
+  border-radius: 6px;
+}
+
+.dc-action-inputs input:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+.dc-acted {
+  margin: 10px 0 0;
+  font-size: 12.5px;
+  color: var(--accent);
+}
+
+/* 横向对比 */
+
+.compare-row-wrap {
+  margin-top: 36px;
+}
+
+.compare-row-wrap h2 {
+  margin: 0 0 14px;
+  font-size: 18px;
+  letter-spacing: 1px;
+}
+
+.compare-row {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+.compare-row th,
+.compare-row td {
+  padding: 10px 14px;
+  text-align: left;
+  border-bottom: 1px solid var(--rule);
+}
+
+.compare-row th {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--ink-soft);
+}
+
+.decide-restart {
+  margin-top: 24px;
+}
+
+.decide-restart button {
+  padding: 11px 22px;
+  font-size: 13.5px;
+  border: 1px solid var(--rule);
+  border-radius: 8px;
+  color: var(--ink-soft);
+}
+
+/* 决策档案 */
+
+.decide-history {
+  margin-top: 56px;
+  border-top: 1px solid var(--rule);
+  padding-top: 28px;
+}
+
+.decide-history h2 {
+  margin: 0 0 14px;
+  font-size: 18px;
+  letter-spacing: 1px;
+}
+
+.decide-history-empty {
+  margin: 0;
+  font-family: var(--serif);
+  font-size: 13.5px;
+  color: var(--ink-soft);
+}
+
+.decide-history ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.decide-history li {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  font-size: 13px;
+}
+
+.history-topic {
+  font-family: var(--serif);
+}
+
+.history-action {
+  color: var(--ink-soft);
+  font-size: 12px;
+}
+
+.history-date {
+  margin-left: auto;
+  color: var(--ink-soft);
+  font-size: 12px;
+}
+
+.history-actions {
+  display: flex;
+  gap: 6px;
+}
+
+.history-actions button {
+  padding: 3px 7px;
+  font-size: 11px;
+  border: 1px solid var(--rule);
+  border-radius: 5px;
+  color: var(--ink-soft);
+}
+
+@media (max-width: 900px) {
+  .decide-cards {
+    flex-direction: column;
+  }
+
+  .decision-card {
+    max-width: none;
+  }
+}
